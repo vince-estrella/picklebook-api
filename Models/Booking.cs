@@ -1,0 +1,18 @@
+namespace PickleballApi.Models
+{
+    public class Booking
+    {
+        public int Id { get; set; }
+        public int CourtId { get; set; }
+        public Court? Court { get; set; }
+
+        public DateTime Date { get; set; }
+        public TimeSpan StartTime { get; set; }
+        public TimeSpan EndTime { get; set; }
+
+        public string BookerName { get; set; } = string.Empty;
+        public string BookerPhone { get; set; } = string.Empty;
+
+        public string Status { get; set; } = "Pending"; // Pending, Confirmed, Cancelled
+    }
+}
