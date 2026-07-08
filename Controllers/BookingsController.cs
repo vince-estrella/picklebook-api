@@ -60,7 +60,7 @@ namespace PickleballApi.Controllers
                 BookerPhone = dto.BookerPhone,
                 Status = "Confirmed"
             };
-
+            booking.BookingReference = $"#PKL-{new Random().Next(1000, 9999)}-{(char)('A' + new Random().Next(0, 26))}";
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
 

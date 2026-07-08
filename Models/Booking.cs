@@ -2,6 +2,7 @@ namespace PickleballApi.Models
 {
     public class Booking
     {
+        public string BookingReference { get; set; } = string.Empty;
         public int Id { get; set; }
         public int CourtId { get; set; }
         public Court? Court { get; set; }
