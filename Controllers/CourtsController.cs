@@ -19,10 +19,13 @@ namespace PickleballApi.Controllers
 
         // GET: api/courts
         [HttpGet]
-        public async Task<ActionResult<List<Court>>> GetCourts()
-        {
-            return await _context.Courts.ToListAsync();
-        }
+        [HttpGet]
+public async Task<ActionResult<List<Court>>> GetCourts()
+{
+    return await _context.Courts
+        .Include(c => c.Images)
+        .ToListAsync();
+}
         // GET: api/courts/5
     [HttpGet("{id}")]
     public async Task<ActionResult<Court>> GetCourt(int id)
@@ -77,6 +80,35 @@ namespace PickleballApi.Controllers
 
         return Ok(new { courtImage.Id, courtImage.ImageUrl });
     }
+    [Authorize]
+[HttpPut("{id}")]
+public async Task<ActionResult> UpdateCourt(int id, Court court)
+{
+    var existing = await _context.Courts.FindAsync(id);
+    if (existing == null) return NotFound();
+
+    existing.Name = court.Name;
+    existing.Address = court.Address;
+    existing.Type = court.Type;
+    existing.SurfaceType = court.SurfaceType;
+    existing.MaxPlayers = court.MaxPlayers;
+    existing.PricePerHour = court.PricePerHour;
+    existing.Description = court.Description;
+    existing.Amenities = court.Amenities;
+    existing.Rules = court.Rules;
+    existing.MonFriOpen = court.MonFriOpen;
+    existing.MonFriClose = court.MonFriClose;
+    existing.SatOpen = court.SatOpen;
+    existing.SatClose = court.SatClose;
+    existing.SunOpen = court.SunOpen;
+    existing.SunClose = court.SunClose;
+    existing.ExternalBookingUrl = court.ExternalBookingUrl;
+    existing.Latitude = court.Latitude;
+    existing.Longitude = court.Longitude;
+
+    await _context.SaveChangesAsync();
+    return Ok(existing);
+}
         // POST: api/courts
         [Authorize]
         [HttpPost]
