@@ -13,15 +13,24 @@ builder.Services.AddCors(options =>
               .AllowAnyMethod();
     });
 });
+var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
+var port = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "3306";
+var database = Environment.GetEnvironmentVariable("MYSQLDATABASE") ?? "dinkdb";
+var user = Environment.GetEnvironmentVariable("MYSQLUSER") ?? "root";
+var password = Environment.GetEnvironmentVariable("MYSQLPASSWORD") ?? "3cn1vince";
+
+var connectionString = $"server={host};port={port};database={database};user={user};password={password}";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        ServerVersion.AutoDetect(builder.Configuration.GetConnectionString("DefaultConnection"))
+        connectionString,
+        ServerVersion.AutoDetect(connectionString)
     )
 );
-
-var jwtKey = builder.Configuration["Jwt:Key"]!;
-var jwtIssuer = builder.Configuration["Jwt:Issuer"]!;
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") 
+    ?? builder.Configuration["Jwt:Key"]!;
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") 
+    ?? builder.Configuration["Jwt:Issuer"]!;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
