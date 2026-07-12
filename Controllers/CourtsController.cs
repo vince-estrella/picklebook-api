@@ -3,19 +3,23 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
-
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 namespace PickleballApi.Controllers
+
 {
     [ApiController]
     [Route("api/[controller]")]
     public class CourtsController : ControllerBase
     {
         private readonly AppDbContext _context;
+private readonly IConfiguration _config;
 
-        public CourtsController(AppDbContext context)
-        {
-            _context = context;
-        }
+public CourtsController(AppDbContext context, IConfiguration config)
+{
+    _context = context;
+    _config = config;
+}
 
         // GET: api/courts
         [HttpGet]
@@ -43,44 +47,50 @@ public async Task<ActionResult<List<Court>>> GetCourts()
     }
 // POST: api/courts/5/images
     [Authorize]
-    [HttpPost("{id}/images")]
-    public async Task<ActionResult> UploadImage(int id, IFormFile file)
+[HttpPost("{id}/images")]
+public async Task<ActionResult> UploadImage(int id, IFormFile file)
+{
+    var court = await _context.Courts.FindAsync(id);
+    if (court == null) return NotFound();
+
+    if (file == null || file.Length == 0)
+        return BadRequest("No file uploaded.");
+
+    var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
+    if (!allowedTypes.Contains(file.ContentType))
+        return BadRequest("Only JPEG, PNG, and WebP images are allowed.");
+
+    // Upload to Cloudinary
+    var cloudName = Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME") ?? _config["Cloudinary:CloudName"];
+    var apiKey = Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY") ?? _config["Cloudinary:ApiKey"];
+    var apiSecret = Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET") ?? _config["Cloudinary:ApiSecret"];
+
+    var account = new CloudinaryDotNet.Account(cloudName, apiKey, apiSecret);
+    var cloudinary = new CloudinaryDotNet.Cloudinary(account);
+
+    using var stream = file.OpenReadStream();
+    var uploadParams = new CloudinaryDotNet.Actions.ImageUploadParams
     {
-        var court = await _context.Courts.FindAsync(id);
-        if (court == null) return NotFound();
+        File = new CloudinaryDotNet.FileDescription(file.FileName, stream),
+        Folder = "picklebook"
+    };
 
-        if (file == null || file.Length == 0)
-         return BadRequest("No file uploaded.");
+    var uploadResult = await cloudinary.UploadAsync(uploadParams);
 
-        var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
-        if (!allowedTypes.Contains(file.ContentType))
-            return BadRequest("Only JPEG, PNG, and WebP images are allowed.");
+    if (uploadResult.Error != null)
+        return BadRequest("Image upload failed.");
 
-        var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
-        Directory.CreateDirectory(uploadsFolder);
+    var courtImage = new CourtImage
+    {
+        CourtId = id,
+        ImageUrl = uploadResult.SecureUrl.ToString()
+    };
 
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-        var filePath = Path.Combine(uploadsFolder, fileName);
+    _context.CourtImages.Add(courtImage);
+    await _context.SaveChangesAsync();
 
-        using (var stream = new FileStream(filePath, FileMode.Create))
-        {
-            await file.CopyToAsync(stream);
-        }
-
-        var imageUrl = $"/uploads/{fileName}";
-
-        var courtImage = new CourtImage
-        {
-            CourtId = id,
-            ImageUrl = imageUrl
-        };
-
-        _context.CourtImages.Add(courtImage);
-        await _context.SaveChangesAsync();
-
-        return Ok(new { courtImage.Id, courtImage.ImageUrl });
-    }
-    [Authorize]
+    return Ok(new { courtImage.Id, courtImage.ImageUrl });
+} [Authorize]
 [HttpPut("{id}")]
 public async Task<ActionResult> UpdateCourt(int id, Court court)
 {
