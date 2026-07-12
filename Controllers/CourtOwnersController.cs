@@ -60,12 +60,14 @@ namespace PickleballApi.Controllers
                 new Claim(ClaimTypes.NameIdentifier, owner.Id.ToString()),
                 new Claim(ClaimTypes.Email, owner.Email)
             };
+var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? _config["Jwt:Key"]!;
+var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? _config["Jwt:Issuer"]!;
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]!));
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
+var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var token = new JwtSecurityToken(
-                issuer: _config["Jwt:Issuer"],
+var token = new JwtSecurityToken(
+    issuer: jwtIssuer,
                 claims: claims,
                 expires: DateTime.UtcNow.AddDays(7),
                 signingCredentials: creds
