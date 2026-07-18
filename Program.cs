@@ -7,20 +7,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.SetIsOriginAllowed(origin =>
-            origin == "https://picklebook-frontend.vercel.app" ||
-            origin == "http://localhost:5173" ||
-            (origin.StartsWith("https://picklebook-frontend-") && origin.EndsWith(".vercel.app"))
-        )
-        .AllowAnyHeader()
-        .AllowAnyMethod();
-    });
-});var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
+{
+    policy.WithOrigins(
+            "https://picklebook-frontend.vercel.app",
+            "http://localhost:5173" // adjust to your local dev port (Vite default)
+          )
+          .AllowAnyHeader()
+          .AllowAnyMethod();
+});
+});
+var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
 var port = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "3306";
 var database = Environment.GetEnvironmentVariable("MYSQLDATABASE") ?? "dinkdb";
 var user = Environment.GetEnvironmentVariable("MYSQLUSER") ?? "root";
-var password = Environment.GetEnvironmentVariable("MYSQLPASSWORD") ?? "3cn1vince";
+var password = Environment.GetEnvironmentVariable("MYSQLPASSWORD")
+    ?? throw new InvalidOperationException("MYSQLPASSWORD environment variable is not set.");
 
 var connectionString = $"server={host};port={port};database={database};user={user};password={password}";
 

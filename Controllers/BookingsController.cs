@@ -148,11 +148,19 @@ namespace PickleballApi.Controllers
         [HttpPatch("{id}/status")]
         public async Task<ActionResult> UpdateBookingStatus(int id, [FromBody] string status)
         {
-            var booking = await _context.Bookings.FindAsync(id);
+            var booking = await _context.Bookings
+                .Include(b => b.Court)
+                .FirstOrDefaultAsync(b => b.Id == id);
 
             if (booking == null)
             {
                 return NotFound();
+            }
+
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (booking.Court?.CourtOwnerId != ownerId)
+            {
+                return Forbid();
             }
 
             var validStatuses = new[] { "Pending", "Confirmed", "Cancelled" };
