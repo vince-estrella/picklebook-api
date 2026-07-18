@@ -7,14 +7,15 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
-{
-    policy.WithOrigins(
-            "https://picklebook-frontend.vercel.app",
-            "http://localhost:5173" // adjust to your local dev port (Vite default)
-          )
-          .AllowAnyHeader()
-          .AllowAnyMethod();
-});
+    {
+        policy.SetIsOriginAllowed(origin =>
+            origin == "https://picklebook-frontend.vercel.app" ||
+            origin == "http://localhost:5173" ||
+            (origin.StartsWith("https://picklebook-frontend-") && origin.EndsWith(".vercel.app"))
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+    });
 });
 var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
 var port = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "3306";
@@ -53,9 +54,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-
 var app = builder.Build();
 // Auto-run migrations on startup
 using (var scope = app.Services.CreateScope())
@@ -66,9 +64,6 @@ using (var scope = app.Services.CreateScope())
 app.UseCors("AllowFrontend");
 app.UseAuthentication();
 app.UseAuthorization();
-
-
-
 
 app.UseStaticFiles();
 app.UseHttpsRedirection();
