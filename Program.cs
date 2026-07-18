@@ -7,11 +7,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
+{
+    policy.WithOrigins(
+            "https://picklebook-frontend.vercel.app",
+            "http://localhost:5173" // adjust to your local dev port (Vite default)
+          )
+          .AllowAnyHeader()
+          .AllowAnyMethod();
+});
 });
 var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
 var port = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "3306";

@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using System.Security.Claims;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 namespace PickleballApi.Controllers
+
 
 {
     [ApiController]
@@ -128,5 +130,16 @@ public async Task<ActionResult> UpdateCourt(int id, Court court)
             await _context.SaveChangesAsync();
             return CreatedAtAction(nameof(GetCourts), court);
         }
-    }
+    
+    [Authorize]
+[HttpGet("owner")]
+public async Task<ActionResult<List<Court>>> GetOwnerCourts()
+{
+    var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    var courts = await _context.Courts
+        .Include(c => c.Images)
+        .Where(c => c.CourtOwnerId == ownerId)
+        .ToListAsync();
+    return courts;
+}}
 }

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace PickleballApi.Controllers
 {
@@ -25,6 +26,80 @@ namespace PickleballApi.Controllers
                 .ToListAsync();
 
             return bookings;
+        }
+
+        // GET: api/bookings/owner
+        [Authorize]
+        [HttpGet("owner")]
+        public async Task<ActionResult> GetOwnerBookings()
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var bookings = await _context.Bookings
+                .Include(b => b.Court)
+                .Where(b => b.Court!.CourtOwnerId == ownerId && b.Status != "Cancelled")
+                .OrderByDescending(b => b.Date)
+                .ThenByDescending(b => b.StartTime)
+                .Select(b => new
+                {
+                    b.Id,
+                    b.BookingReference,
+                    b.Date,
+                    b.StartTime,
+                    b.EndTime,
+                    b.BookerName,
+                    b.BookerPhone,
+                    b.Status,
+                    courtName = b.Court!.Name,
+                    amount = (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court.PricePerHour
+                })
+                .ToListAsync();
+
+            return Ok(bookings);
+        }
+
+        // GET: api/bookings/stats
+        [Authorize]
+        [HttpGet("stats")]
+        public async Task<ActionResult> GetOwnerStats()
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var bookings = await _context.Bookings
+                .Include(b => b.Court)
+                .Where(b => b.Court!.CourtOwnerId == ownerId && b.Status != "Cancelled")
+                .ToListAsync();
+
+            var today = DateTime.Today;
+            var totalUsers = bookings.Select(b => b.BookerPhone).Distinct().Count();
+            var activeBookings = bookings.Count(b => b.Date.Date >= today && b.Status == "Confirmed");
+
+            var monthlyRevenue = bookings
+                .Where(b => b.Date.Month == today.Month && b.Date.Year == today.Year)
+                .Sum(b => (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court!.PricePerHour);
+
+            var weekStart = today.AddDays(-6);
+            var weeklyRevenue = Enumerable.Range(0, 7).Select(offset =>
+            {
+                var day = weekStart.AddDays(offset);
+                var total = bookings
+                    .Where(b => b.Date.Date == day.Date)
+                    .Sum(b => (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court!.PricePerHour);
+                return new
+                {
+                    date = day.ToString("yyyy-MM-dd"),
+                    day = day.DayOfWeek.ToString().Substring(0, 3).ToUpper(),
+                    total
+                };
+            }).ToList();
+
+            return Ok(new
+            {
+                totalUsers,
+                activeBookings,
+                monthlyRevenue,
+                weeklyRevenue
+            });
         }
 
         // POST: api/bookings
@@ -66,28 +141,29 @@ namespace PickleballApi.Controllers
 
             return Ok(booking);
         }
+
         // PATCH: api/bookings/5/status
-[Authorize]
-[HttpPatch("{id}/status")]
-public async Task<ActionResult> UpdateBookingStatus(int id, [FromBody] string status)
-{
-    var booking = await _context.Bookings.FindAsync(id);
+        [Authorize]
+        [HttpPatch("{id}/status")]
+        public async Task<ActionResult> UpdateBookingStatus(int id, [FromBody] string status)
+        {
+            var booking = await _context.Bookings.FindAsync(id);
 
-    if (booking == null)
-    {
-        return NotFound();
-    }
+            if (booking == null)
+            {
+                return NotFound();
+            }
 
-    var validStatuses = new[] { "Pending", "Confirmed", "Cancelled" };
-    if (!validStatuses.Contains(status))
-    {
-        return BadRequest("Invalid status. Must be Pending, Confirmed, or Cancelled.");
-    }
+            var validStatuses = new[] { "Pending", "Confirmed", "Cancelled" };
+            if (!validStatuses.Contains(status))
+            {
+                return BadRequest("Invalid status. Must be Pending, Confirmed, or Cancelled.");
+            }
 
-    booking.Status = status;
-    await _context.SaveChangesAsync();
+            booking.Status = status;
+            await _context.SaveChangesAsync();
 
-    return Ok(new { booking.Id, booking.Status });
-}
+            return Ok(new { booking.Id, booking.Status });
+        }
     }
 }
