@@ -28,6 +28,37 @@ namespace PickleballApi.Controllers
             return bookings;
         }
 
+        // GET: api/bookings/owner
+        [Authorize]
+        [HttpGet("owner")]
+        public async Task<ActionResult> GetOwnerBookings()
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var bookings = await _context.Bookings
+                .Include(b => b.Court)
+                .Where(b => b.Court!.CourtOwnerId == ownerId && b.Status != "Cancelled")
+                .OrderByDescending(b => b.Date)
+                .ThenByDescending(b => b.StartTime)
+                .ToListAsync();
+
+            var result = bookings.Select(b => new
+            {
+                b.Id,
+                b.BookingReference,
+                b.Date,
+                b.StartTime,
+                b.EndTime,
+                b.BookerName,
+                b.BookerPhone,
+                b.Status,
+                courtName = b.Court!.Name,
+                amount = (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court.PricePerHour
+            });
+
+            return Ok(result);
+        }
+
         // GET: api/bookings/stats
         [Authorize]
         [HttpGet("stats")]
