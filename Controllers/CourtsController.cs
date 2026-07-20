@@ -106,7 +106,7 @@ namespace PickleballApi.Controllers
             {
                 return Forbid();
             }
-
+            existing.PaymentMethod = court.PaymentMethod;
             existing.Name = court.Name;
             existing.Address = court.Address;
             existing.Type = court.Type;
