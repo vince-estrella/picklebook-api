@@ -58,7 +58,8 @@ namespace PickleballApi.Controllers
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, owner.Id.ToString()),
-                new Claim(ClaimTypes.Email, owner.Email)
+                new Claim(ClaimTypes.Email, owner.Email),
+                new Claim(ClaimTypes.Role, "CourtOwner")
             };
 var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY") ?? _config["Jwt:Key"]!;
 var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? _config["Jwt:Issuer"]!;
