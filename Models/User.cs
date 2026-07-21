@@ -9,5 +9,6 @@ namespace PickleballApi.Models
         public string Phone { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
         public List<Booking> Bookings { get; set; } = new();
+        public string? ProfileImageUrl { get; set; }
     }
 }

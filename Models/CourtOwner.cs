@@ -10,5 +10,6 @@ namespace PickleballApi.Models
         public string PasswordHash { get; set; } = string.Empty;
         public string? ProfilePhotoUrl { get; set; }
         public List<Court> Courts { get; set; } = new();
+        public string? ProfileImageUrl { get; set; }
     }
 }

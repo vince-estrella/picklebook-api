@@ -6,7 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
-
+using CloudinaryDotNet;
+using CloudinaryDotNet.Actions;
 namespace PickleballApi.Controllers
 {
     [ApiController]
@@ -116,6 +117,98 @@ namespace PickleballApi.Controllers
             });
 
             return Ok(result);
+        }
+        private int CurrentUserId => int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+        // GET: api/users/profile
+        [Authorize(Roles = "Player")]
+        [HttpGet("profile")]
+        public async Task<ActionResult> GetProfile()
+        {
+            var user = await _context.Users.FindAsync(CurrentUserId);
+            if (user == null) return NotFound();
+
+            return Ok(new
+            {
+                user.Email,
+                user.ProfileImageUrl
+            });
+        }
+
+        // PUT: api/users/email
+        [Authorize(Roles = "Player")]
+        [HttpPut("email")]
+        public async Task<ActionResult> UpdateEmail([FromBody] UpdateEmailDto dto)
+        {
+            var user = await _context.Users.FindAsync(CurrentUserId);
+            if (user == null) return NotFound();
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                return BadRequest("Current password is incorrect.");
+
+            bool emailTaken = await _context.Users.AnyAsync(u => u.Email == dto.Email && u.Id != user.Id);
+            if (emailTaken) return BadRequest("Email already in use.");
+
+            user.Email = dto.Email;
+            await _context.SaveChangesAsync();
+
+            return Ok(new { user.Email });
+        }
+
+        // PUT: api/users/password
+        [Authorize(Roles = "Player")]
+        [HttpPut("password")]
+        public async Task<ActionResult> UpdatePassword([FromBody] UpdatePasswordDto dto)
+        {
+            var user = await _context.Users.FindAsync(CurrentUserId);
+            if (user == null) return NotFound();
+
+            if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
+                return BadRequest("Current password is incorrect.");
+
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { message = "Password updated." });
+        }
+
+        // POST: api/users/profile-picture
+        [Authorize(Roles = "Player")]
+        [HttpPost("profile-picture")]
+        public async Task<ActionResult> UploadProfilePicture(IFormFile image)
+        {
+            var user = await _context.Users.FindAsync(CurrentUserId);
+            if (user == null) return NotFound();
+
+            if (image == null || image.Length == 0)
+                return BadRequest("No file uploaded.");
+
+            var allowedTypes = new[] { "image/jpeg", "image/png", "image/webp" };
+            if (!allowedTypes.Contains(image.ContentType))
+                return BadRequest("Only JPEG, PNG, and WebP images are allowed.");
+
+            var cloudName = Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME") ?? _config["Cloudinary:CloudName"];
+            var apiKey = Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY") ?? _config["Cloudinary:ApiKey"];
+            var apiSecret = Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET") ?? _config["Cloudinary:ApiSecret"];
+
+            var account = new CloudinaryDotNet.Account(cloudName, apiKey, apiSecret);
+            var cloudinary = new CloudinaryDotNet.Cloudinary(account);
+
+            using var stream = image.OpenReadStream();
+            var uploadParams = new CloudinaryDotNet.Actions.ImageUploadParams
+            {
+                File = new CloudinaryDotNet.FileDescription(image.FileName, stream),
+                Folder = "picklebook/profile-pictures"
+            };
+
+            var uploadResult = await cloudinary.UploadAsync(uploadParams);
+            if (uploadResult.Error != null)
+                return BadRequest("Image upload failed.");
+
+            user.ProfileImageUrl = uploadResult.SecureUrl.ToString();
+            await _context.SaveChangesAsync();
+
+            return Ok(new { user.ProfileImageUrl });
         }
     }
 }
