@@ -115,7 +115,19 @@ namespace PickleballApi.Controllers
             await AutoCompleteExpiredBookings(bookings);
 
             var today = DateTime.Today;
-            var totalUsers = bookings.Select(b => b.BookerPhone).Distinct().Count();
+            var nowLocal = NowInPhilippines();
+
+            // "Currently booked" = distinct bookers whose Confirmed booking's
+            // time window includes this exact moment (started, not yet ended).
+            var usersCurrentlyBooked = bookings
+                .Where(b => b.Status == "Confirmed"
+                    && b.Date.Date == nowLocal.Date
+                    && b.Date.Date + b.StartTime <= nowLocal
+                    && b.Date.Date + b.EndTime > nowLocal)
+                .Select(b => b.BookerPhone)
+                .Distinct()
+                .Count();
+
             var activeBookings = bookings.Count(b => b.Date.Date >= today && b.Status == "Confirmed");
 
             var monthlyRevenue = bookings
@@ -139,7 +151,7 @@ namespace PickleballApi.Controllers
 
             return Ok(new
             {
-                totalUsers,
+                usersCurrentlyBooked,
                 activeBookings,
                 monthlyRevenue,
                 weeklyRevenue
