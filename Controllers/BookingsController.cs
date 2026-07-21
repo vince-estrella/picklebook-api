@@ -169,9 +169,21 @@ namespace PickleballApi.Controllers
                 return BadRequest("This time slot is already booked.");
             }
 
+            // Optional auth: if a valid Player token was sent, link this booking
+            // to that user. If not (guest checkout), UserId just stays null —
+            // this endpoint has no [Authorize], so both cases are allowed.
+            int? userId = null;
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var roleClaim = User.FindFirstValue(ClaimTypes.Role);
+            if (userIdClaim != null && roleClaim == "Player")
+            {
+                userId = int.Parse(userIdClaim);
+            }
+
             var booking = new Booking
             {
                 CourtId = dto.CourtId,
+                UserId = userId,
                 Date = dto.Date,
                 StartTime = dto.StartTime,
                 EndTime = dto.EndTime,
