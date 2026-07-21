@@ -12,9 +12,46 @@ namespace PickleballApi.Controllers
     {
         private readonly AppDbContext _context;
 
+        // Bookings store local Philippine wall-clock times with no timezone info,
+        // but the server (Railway) runs in UTC. Auto-completion needs to compare
+        // against Philippine "now", not server "now", or bookings would flip to
+        // Completed up to 8 hours early or late.
+        private static readonly TimeZoneInfo PhilippineTimeZone =
+            TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+
         public BookingsController(AppDbContext context)
         {
             _context = context;
+        }
+
+        private static DateTime NowInPhilippines()
+        {
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, PhilippineTimeZone);
+        }
+
+        // Flips any Confirmed booking whose end time has already passed to
+        // Completed, and persists the change. Called right after loading a
+        // batch of bookings, before they're returned or used in calculations,
+        // so callers never see a stale "Confirmed" status for something that's
+        // already over.
+        private async Task AutoCompleteExpiredBookings(List<Booking> bookings)
+        {
+            var nowLocal = NowInPhilippines();
+            bool changed = false;
+
+            foreach (var b in bookings)
+            {
+                if (b.Status == "Confirmed" && (b.Date.Date + b.EndTime) <= nowLocal)
+                {
+                    b.Status = "Completed";
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                await _context.SaveChangesAsync();
+            }
         }
 
         // GET: api/bookings/court/5?date=2026-07-01
@@ -24,6 +61,8 @@ namespace PickleballApi.Controllers
             var bookings = await _context.Bookings
                 .Where(b => b.CourtId == courtId && b.Date.Date == date.Date && b.Status != "Cancelled")
                 .ToListAsync();
+
+            await AutoCompleteExpiredBookings(bookings);
 
             return bookings;
         }
@@ -41,6 +80,8 @@ namespace PickleballApi.Controllers
                 .OrderByDescending(b => b.Date)
                 .ThenByDescending(b => b.StartTime)
                 .ToListAsync();
+
+            await AutoCompleteExpiredBookings(bookings);
 
             var result = bookings.Select(b => new
             {
@@ -70,6 +111,8 @@ namespace PickleballApi.Controllers
                 .Include(b => b.Court)
                 .Where(b => b.Court!.CourtOwnerId == ownerId && b.Status != "Cancelled")
                 .ToListAsync();
+
+            await AutoCompleteExpiredBookings(bookings);
 
             var today = DateTime.Today;
             var totalUsers = bookings.Select(b => b.BookerPhone).Distinct().Count();
@@ -163,10 +206,10 @@ namespace PickleballApi.Controllers
                 return Forbid();
             }
 
-            var validStatuses = new[] { "Pending", "Confirmed", "Cancelled" };
+            var validStatuses = new[] { "Pending", "Confirmed", "Cancelled", "Completed" };
             if (!validStatuses.Contains(status))
             {
-                return BadRequest("Invalid status. Must be Pending, Confirmed, or Cancelled.");
+                return BadRequest("Invalid status. Must be Pending, Confirmed, Cancelled, or Completed.");
             }
 
             booking.Status = status;
