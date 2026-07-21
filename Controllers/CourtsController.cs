@@ -155,5 +155,137 @@ namespace PickleballApi.Controllers
                 .ToListAsync();
             return courts;
         }
+
+        // DELETE: api/courts/5/images/12
+        [Authorize(Roles = "CourtOwner")]
+        [HttpDelete("{id}/images/{imageId}")]
+        public async Task<ActionResult> DeleteImage(int id, int imageId)
+        {
+            var court = await _context.Courts.FindAsync(id);
+            if (court == null) return NotFound();
+
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (court.CourtOwnerId != ownerId)
+            {
+                return Forbid();
+            }
+
+            var image = await _context.CourtImages
+                .FirstOrDefaultAsync(ci => ci.Id == imageId && ci.CourtId == id);
+            if (image == null) return NotFound();
+
+            // Best-effort cleanup on Cloudinary. If this fails (bad creds, network,
+            // already deleted, etc.) we still remove the DB row below rather than
+            // leaving a broken image reference stuck on the court.
+            try
+            {
+                var cloudName = Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME") ?? _config["Cloudinary:CloudName"];
+                var apiKey = Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY") ?? _config["Cloudinary:ApiKey"];
+                var apiSecret = Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET") ?? _config["Cloudinary:ApiSecret"];
+                var account = new CloudinaryDotNet.Account(cloudName, apiKey, apiSecret);
+                var cloudinary = new CloudinaryDotNet.Cloudinary(account);
+
+                var publicId = ExtractCloudinaryPublicId(image.ImageUrl);
+                if (publicId != null)
+                {
+                    await cloudinary.DestroyAsync(new DeletionParams(publicId));
+                }
+            }
+            catch
+            {
+                // Swallow: DB cleanup below is the source of truth for what
+                // the app shows, Cloudinary storage cleanup is secondary.
+            }
+
+            _context.CourtImages.Remove(image);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        // DELETE: api/courts/5
+        [Authorize(Roles = "CourtOwner")]
+        [HttpDelete("{id}")]
+        public async Task<ActionResult> DeleteCourt(int id)
+        {
+            var court = await _context.Courts
+                .Include(c => c.Images)
+                .FirstOrDefaultAsync(c => c.Id == id);
+            if (court == null) return NotFound();
+
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (court.CourtOwnerId != ownerId)
+            {
+                return Forbid();
+            }
+
+            // Don't let a court disappear out from under bookings players are
+            // still relying on. Owner has to resolve those first.
+            bool hasActiveBookings = await _context.Bookings.AnyAsync(b =>
+                b.CourtId == id && b.Status != "Cancelled" && b.Status != "Completed");
+
+            if (hasActiveBookings)
+            {
+                return BadRequest("This court has pending or confirmed bookings. Cancel or complete them before deleting the court.");
+            }
+
+            // Best-effort Cloudinary cleanup for every image on this court.
+            try
+            {
+                var cloudName = Environment.GetEnvironmentVariable("CLOUDINARY_CLOUD_NAME") ?? _config["Cloudinary:CloudName"];
+                var apiKey = Environment.GetEnvironmentVariable("CLOUDINARY_API_KEY") ?? _config["Cloudinary:ApiKey"];
+                var apiSecret = Environment.GetEnvironmentVariable("CLOUDINARY_API_SECRET") ?? _config["Cloudinary:ApiSecret"];
+                var account = new CloudinaryDotNet.Account(cloudName, apiKey, apiSecret);
+                var cloudinary = new CloudinaryDotNet.Cloudinary(account);
+
+                foreach (var image in court.Images)
+                {
+                    var publicId = ExtractCloudinaryPublicId(image.ImageUrl);
+                    if (publicId != null)
+                    {
+                        await cloudinary.DestroyAsync(new DeletionParams(publicId));
+                    }
+                }
+            }
+            catch
+            {
+                // Non-fatal, see note above.
+            }
+
+            _context.CourtImages.RemoveRange(court.Images);
+            _context.Courts.Remove(court);
+            await _context.SaveChangesAsync();
+
+            return NoContent();
+        }
+
+        // Pulls the Cloudinary public_id (folder/filename, no extension, no
+        // version segment) out of a stored secure URL so we can call DestroyAsync.
+        // e.g. https://res.cloudinary.com/xyz/image/upload/v169/picklebook/abc123.jpg
+        //   -> "picklebook/abc123"
+        private static string? ExtractCloudinaryPublicId(string imageUrl)
+        {
+            try
+            {
+                var uri = new Uri(imageUrl);
+                var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                var uploadIndex = Array.IndexOf(segments, "upload");
+                if (uploadIndex == -1 || uploadIndex + 1 >= segments.Length) return null;
+
+                var rest = segments.Skip(uploadIndex + 1).ToList();
+                if (rest.Count > 0 && rest[0].Length > 1 && rest[0][0] == 'v' && rest[0].Substring(1).All(char.IsDigit))
+                {
+                    rest.RemoveAt(0);
+                }
+
+                var publicIdWithExt = string.Join("/", rest);
+                var lastDot = publicIdWithExt.LastIndexOf('.');
+                return lastDot > -1 ? publicIdWithExt.Substring(0, lastDot) : publicIdWithExt;
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 }
