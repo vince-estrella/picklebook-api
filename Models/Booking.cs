@@ -6,7 +6,8 @@ namespace PickleballApi.Models
         public int Id { get; set; }
         public int CourtId { get; set; }
         public Court? Court { get; set; }
-
+        public int? UserId { get; set; }
+        public User? User { get; set; }
         public DateTime Date { get; set; }
         public TimeSpan StartTime { get; set; }
         public TimeSpan EndTime { get; set; }

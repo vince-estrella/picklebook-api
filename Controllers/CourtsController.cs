@@ -47,7 +47,7 @@ namespace PickleballApi.Controllers
         }
 
         // POST: api/courts/5/images
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpPost("{id}/images")]
         public async Task<ActionResult> UploadImage(int id, IFormFile file)
         {
@@ -94,7 +94,7 @@ namespace PickleballApi.Controllers
         }
 
         // PUT: api/courts/5
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpPut("{id}")]
         public async Task<ActionResult> UpdateCourt(int id, Court court)
         {
@@ -131,7 +131,7 @@ namespace PickleballApi.Controllers
         }
 
         // POST: api/courts
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpPost]
         public async Task<ActionResult<Court>> CreateCourt(Court court)
         {
@@ -144,7 +144,7 @@ namespace PickleballApi.Controllers
         }
 
         // GET: api/courts/owner
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpGet("owner")]
         public async Task<ActionResult<List<Court>>> GetOwnerCourts()
         {

@@ -68,7 +68,7 @@ namespace PickleballApi.Controllers
         }
 
         // GET: api/bookings/owner
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpGet("owner")]
         public async Task<ActionResult> GetOwnerBookings()
         {
@@ -101,7 +101,7 @@ namespace PickleballApi.Controllers
         }
 
         // GET: api/bookings/stats
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpGet("stats")]
         public async Task<ActionResult> GetOwnerStats()
         {
@@ -187,7 +187,7 @@ namespace PickleballApi.Controllers
         }
 
         // PATCH: api/bookings/5/status
-        [Authorize]
+        [Authorize(Roles = "CourtOwner")]
         [HttpPatch("{id}/status")]
         public async Task<ActionResult> UpdateBookingStatus(int id, [FromBody] string status)
         {
