@@ -15,6 +15,10 @@ namespace PickleballApi.Models
         public string BookerName { get; set; } = string.Empty;
         public string BookerPhone { get; set; } = string.Empty;
 
-        public string Status { get; set; } = "Pending"; // Pending, Confirmed, Cancelled
+        public string PaymentMethod { get; set; } = "PayAtVenue"; // PayAtVenue, Online
+        public string PaymentStatus { get; set; } = "Unpaid"; // Unpaid, Pending, Paid, Refunded, Failed
+        public string Status { get; set; } = "Pending"; // Pending, Confirmed, Cancelled, Completed, NoShow
+        public DateTime? PaidAt { get; set; }
+        public DateTime? CancelledAt { get; set; }
     }
 }

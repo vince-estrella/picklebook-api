@@ -8,5 +8,6 @@ namespace PickleballApi.Models
         public TimeSpan EndTime { get; set; }
         public string BookerName { get; set; } = string.Empty;
         public string BookerPhone { get; set; } = string.Empty;
+        public string PaymentMethod { get; set; } = "PayAtVenue";
     }
 }
