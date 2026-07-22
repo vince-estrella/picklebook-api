@@ -31,20 +31,51 @@ namespace PickleballApi.Controllers
         }
 
         // GET: api/courts/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Court>> GetCourt(int id)
-        {
-            var court = await _context.Courts
-                .Include(c => c.Images)
-                .FirstOrDefaultAsync(c => c.Id == id);
+[HttpGet("{id}")]
+public async Task<ActionResult> GetCourt(int id)
+{
+    var court = await _context.Courts
+        .Include(c => c.Images)
+        .Include(c => c.CourtOwner)
+        .FirstOrDefaultAsync(c => c.Id == id);
 
-            if (court == null)
-            {
-                return NotFound();
-            }
+    if (court == null)
+    {
+        return NotFound();
+    }
 
-            return court;
-        }
+    var result = new
+    {
+        court.Id,
+        court.CourtOwnerId,
+        court.Name,
+        court.Address,
+        court.Type,
+        court.SurfaceType,
+        court.MaxPlayers,
+        court.PricePerHour,
+        court.Description,
+        court.Amenities,
+        court.Rules,
+        court.PaymentMethod,
+        court.MonFriOpen,
+        court.MonFriClose,
+        court.SatOpen,
+        court.SatClose,
+        court.SunOpen,
+        court.SunClose,
+        court.ExternalBookingUrl,
+        court.Latitude,
+        court.Longitude,
+        court.Images,
+        ownerName = court.CourtOwner != null
+            ? $"{court.CourtOwner.FirstName} {court.CourtOwner.LastName}".Trim()
+            : null,
+        ownerProfileImageUrl = court.CourtOwner != null ? court.CourtOwner.ProfileImageUrl : null
+    };
+
+    return Ok(result);
+}
 
         // POST: api/courts/5/images
         [Authorize(Roles = "CourtOwner")]
