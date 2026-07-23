@@ -249,12 +249,13 @@ namespace PickleballApi.Controllers
 
                 return Ok(new { booking, checkoutUrl });
             }
-            catch
-            {
-                _context.Bookings.Remove(booking);
-                await _context.SaveChangesAsync();
-                return StatusCode(502, "Could not start payment. Please try again.");
-            }
+            catch (Exception ex)
+{
+    Console.WriteLine($"Xendit invoice creation failed: {ex.Message}");
+    _context.Bookings.Remove(booking);
+    await _context.SaveChangesAsync();
+    return StatusCode(502, "Could not start payment. Please try again.");
+}
         }
 
         private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, decimal amount, string description)
@@ -279,9 +280,9 @@ namespace PickleballApi.Controllers
             var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
 
             if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception("Failed to create Xendit invoice.");
-            }
+{
+    throw new Exception($"Xendit API error ({(int)response.StatusCode}): {json}");
+}
 
             var invoiceId = json.GetProperty("id").GetString()!;
             var checkoutUrl = json.GetProperty("invoice_url").GetString()!;
