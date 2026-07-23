@@ -2,6 +2,7 @@ namespace PickleballApi.Models
 {
     public class Booking
     {
+        
         public string BookingReference { get; set; } = string.Empty;
         public int Id { get; set; }
         public int CourtId { get; set; }
@@ -20,5 +21,6 @@ namespace PickleballApi.Models
         public string Status { get; set; } = "Pending"; // Pending, Confirmed, Cancelled, Completed, NoShow
         public DateTime? PaidAt { get; set; }
         public DateTime? CancelledAt { get; set; }
+        public string? XenditInvoiceId { get; set; }
     }
 }

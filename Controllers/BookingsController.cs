@@ -11,6 +11,7 @@ namespace PickleballApi.Controllers
     public class BookingsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         // Bookings store local Philippine wall-clock times with no timezone info,
         // but the server (Railway) runs in UTC. Auto-completion needs to compare
@@ -19,9 +20,10 @@ namespace PickleballApi.Controllers
         private static readonly TimeZoneInfo PhilippineTimeZone =
             TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
 
-        public BookingsController(AppDbContext context)
+        public BookingsController(AppDbContext context, IHttpClientFactory httpClientFactory)
         {
             _context = context;
+            _httpClientFactory = httpClientFactory;
         }
 
         private static DateTime NowInPhilippines()
@@ -160,10 +162,10 @@ namespace PickleballApi.Controllers
 
         // POST: api/bookings
         [HttpPost]
-        public async Task<ActionResult<Booking>> CreateBooking(CreateBookingDto dto)
+        public async Task<ActionResult> CreateBooking(CreateBookingDto dto)
         {
-            bool courtExists = await _context.Courts.AnyAsync(c => c.Id == dto.CourtId);
-            if (!courtExists)
+            var court = await _context.Courts.FirstOrDefaultAsync(c => c.Id == dto.CourtId);
+            if (court == null)
             {
                 return BadRequest("Court does not exist.");
             }
@@ -181,9 +183,6 @@ namespace PickleballApi.Controllers
                 return BadRequest("This time slot is already booked.");
             }
 
-            // Optional auth: if a valid Player token was sent, link this booking
-            // to that user. If not (guest checkout), UserId just stays null —
-            // this endpoint has no [Authorize], so both cases are allowed.
             int? userId = null;
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var roleClaim = User.FindFirstValue(ClaimTypes.Role);
@@ -191,6 +190,11 @@ namespace PickleballApi.Controllers
             {
                 userId = int.Parse(userIdClaim);
             }
+
+            // Court.PaymentMethod == "PayMongo" is the owner-facing flag meaning
+            // "this court takes online payment" — kept as that literal string for
+            // now since renaming it touches the owner court-settings UI too.
+            bool requiresOnlinePayment = court.PaymentMethod == "PayMongo";
 
             var booking = new Booking
             {
@@ -201,13 +205,67 @@ namespace PickleballApi.Controllers
                 EndTime = dto.EndTime,
                 BookerName = dto.BookerName,
                 BookerPhone = dto.BookerPhone,
-                Status = "Confirmed"
+                PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
+                PaymentStatus = requiresOnlinePayment ? "Unpaid" : "Paid",
+                Status = requiresOnlinePayment ? "Pending" : "Confirmed"
             };
             booking.BookingReference = $"#PKL-{new Random().Next(1000, 9999)}-{(char)('A' + new Random().Next(0, 26))}";
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
 
-            return Ok(booking);
+            if (!requiresOnlinePayment)
+            {
+                return Ok(new { booking, checkoutUrl = (string?)null });
+            }
+
+            var hours = (decimal)(dto.EndTime - dto.StartTime).TotalHours;
+            var amount = hours * court.PricePerHour;
+
+            try
+            {
+                var (invoiceId, checkoutUrl) = await CreateXenditInvoice(booking.Id, amount, $"{court.Name} — {dto.Date:yyyy-MM-dd} {dto.StartTime}");
+                booking.XenditInvoiceId = invoiceId;
+                await _context.SaveChangesAsync();
+
+                return Ok(new { booking, checkoutUrl });
+            }
+            catch
+            {
+                // Don't leave an unpayable booking sitting in the DB blocking the
+                // slot forever — roll it back so the player can retry cleanly.
+                _context.Bookings.Remove(booking);
+                await _context.SaveChangesAsync();
+                return StatusCode(502, "Could not start payment. Please try again.");
+            }
+        }
+
+        private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, decimal amount, string description)
+        {
+            var secretKey = Environment.GetEnvironmentVariable("XENDIT_SECRET_KEY")!;
+            var client = _httpClientFactory.CreateClient();
+            var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{secretKey}:"));
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authValue);
+
+            var payload = new
+            {
+                external_id = $"booking-{bookingId}",
+                amount = amount,
+                description,
+                currency = "PHP"
+            };
+
+            var response = await client.PostAsJsonAsync("https://api.xendit.co/v2/invoices", payload);
+            var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new Exception("Failed to create Xendit invoice.");
+            }
+
+            var invoiceId = json.GetProperty("id").GetString()!;
+            var checkoutUrl = json.GetProperty("invoice_url").GetString()!;
+
+            return (invoiceId, checkoutUrl);
         }
 
         // PATCH: api/bookings/5/status

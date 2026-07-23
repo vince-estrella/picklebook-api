@@ -17,6 +17,7 @@ builder.Services.AddCors(options =>
         .AllowAnyMethod();
     });
 });
+builder.Services.AddHttpClient();
 var host = Environment.GetEnvironmentVariable("MYSQLHOST") ?? "localhost";
 var port = Environment.GetEnvironmentVariable("MYSQLPORT") ?? "3306";
 var database = Environment.GetEnvironmentVariable("MYSQLDATABASE") ?? "dinkdb";
