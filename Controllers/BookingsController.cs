@@ -270,8 +270,12 @@ namespace PickleballApi.Controllers
                 BookerName = dto.BookerName,
                 BookerPhone = dto.BookerPhone,
                 PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
-                PaymentStatus = requiresOnlinePayment ? "Unpaid" : "Paid",
-                Status = requiresOnlinePayment ? "Pending" : "Confirmed"
+                PaymentStatus = "Unpaid",
+                // Every booking starts Pending now — online payments flip to
+                // Confirmed automatically via the Xendit webhook once paid;
+                // pay-at-venue bookings wait for the owner to confirm once
+                // the player checks in and actually pays on-site.
+                Status = "Pending"
             };
             booking.BookingReference = $"#PKL-{new Random().Next(1000, 9999)}-{(char)('A' + new Random().Next(0, 26))}";
             _context.Bookings.Add(booking);
@@ -294,12 +298,12 @@ namespace PickleballApi.Controllers
                 return Ok(new { booking, checkoutUrl });
             }
             catch (Exception ex)
-{
-    Console.WriteLine($"Xendit invoice creation failed: {ex.Message}");
-    _context.Bookings.Remove(booking);
-    await _context.SaveChangesAsync();
-    return StatusCode(502, "Could not start payment. Please try again.");
-}
+            {
+                Console.WriteLine($"Xendit invoice creation failed: {ex.Message}");
+                _context.Bookings.Remove(booking);
+                await _context.SaveChangesAsync();
+                return StatusCode(502, "Could not start payment. Please try again.");
+            }
         }
 
         private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, decimal amount, string description)
@@ -324,9 +328,9 @@ namespace PickleballApi.Controllers
             var json = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
 
             if (!response.IsSuccessStatusCode)
-{
-    throw new Exception($"Xendit API error ({(int)response.StatusCode}): {json}");
-}
+            {
+                throw new Exception($"Xendit API error ({(int)response.StatusCode}): {json}");
+            }
 
             var invoiceId = json.GetProperty("id").GetString()!;
             var checkoutUrl = json.GetProperty("invoice_url").GetString()!;
@@ -361,9 +365,24 @@ namespace PickleballApi.Controllers
             }
 
             booking.Status = status;
+
+            // Confirming a pay-at-venue booking means the owner just collected
+            // payment in person — reflect that so receipts/reports don't keep
+            // showing it as unpaid.
+            if (status == "Confirmed" && booking.PaymentMethod == "PayAtVenue" && booking.PaymentStatus != "Paid")
+            {
+                booking.PaymentStatus = "Paid";
+                booking.PaidAt = DateTime.UtcNow;
+            }
+
+            if (status == "Cancelled" && booking.CancelledAt == null)
+            {
+                booking.CancelledAt = DateTime.UtcNow;
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new { booking.Id, booking.Status });
+            return Ok(new { booking.Id, booking.Status, booking.PaymentStatus });
         }
     }
 }
