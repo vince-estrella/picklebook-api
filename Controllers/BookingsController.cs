@@ -81,6 +81,50 @@ namespace PickleballApi.Controllers
             });
         }
 
+        // GET: api/bookings/owner/5 — full receipt detail for the court owner's
+        // Bookings page. Unlike the public GET /bookings/{id} (used by the
+        // player's confirmation page), this requires auth and verifies the
+        // booking actually belongs to a court owned by the requester, since
+        // it exposes the booker's name/phone.
+        [Authorize(Roles = "CourtOwner")]
+        [HttpGet("owner/{id}")]
+        public async Task<ActionResult> GetOwnerBookingDetail(int id)
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var booking = await _context.Bookings
+                .Include(b => b.Court)
+                .FirstOrDefaultAsync(b => b.Id == id);
+
+            if (booking == null) return NotFound();
+            if (booking.Court?.CourtOwnerId != ownerId) return Forbid();
+
+            var hours = (decimal)(booking.EndTime - booking.StartTime).TotalHours;
+            var amount = hours * (booking.Court?.PricePerHour ?? 0);
+
+            return Ok(new
+            {
+                booking.Id,
+                booking.BookingReference,
+                booking.Date,
+                booking.StartTime,
+                booking.EndTime,
+                booking.BookerName,
+                booking.BookerPhone,
+                booking.PaymentMethod,
+                booking.PaymentStatus,
+                booking.Status,
+                amount,
+                court = booking.Court == null ? null : new
+                {
+                    booking.Court.Id,
+                    booking.Court.Name,
+                    booking.Court.Address,
+                    booking.Court.PricePerHour
+                }
+            });
+        }
+
         // GET: api/bookings/court/5?date=2026-07-01
         [HttpGet("court/{courtId}")]
         public async Task<ActionResult<List<Booking>>> GetBookingsForCourt(int courtId, DateTime date)
@@ -214,7 +258,7 @@ namespace PickleballApi.Controllers
                 userId = int.Parse(userIdClaim);
             }
 
-            bool requiresOnlinePayment = court.PaymentMethod == "PayMongo";
+            bool requiresOnlinePayment = court.PaymentMethod == "Online" || court.PaymentMethod == "PayMongo";
 
             var booking = new Booking
             {
@@ -261,7 +305,7 @@ namespace PickleballApi.Controllers
         private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, decimal amount, string description)
         {
             var secretKey = Environment.GetEnvironmentVariable("XENDIT_SECRET_KEY")!;
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://picklebook-frontend.vercel.app";
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://thepicklebook.vercel.app";
 
             var client = _httpClientFactory.CreateClient();
             var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{secretKey}:"));
