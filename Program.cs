@@ -4,14 +4,18 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 var builder = WebApplication.CreateBuilder(args);
+var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL")
+    ?? "https://thepicklebook.vercel.app"; // fallback for local/dev runs where the var isn't set
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
         policy.SetIsOriginAllowed(origin =>
-            origin == "https://picklebook-frontend.vercel.app" ||
+            origin == frontendUrl ||
             origin == "http://localhost:5173" ||
-            (origin.StartsWith("https://picklebook-frontend-") && origin.EndsWith(".vercel.app"))
+            (origin.StartsWith("https://thepicklebook") && origin.EndsWith(".vercel.app")) ||
+            (origin.StartsWith("https://picklebook-frontend") && origin.EndsWith(".vercel.app"))
         )
         .AllowAnyHeader()
         .AllowAnyMethod();
