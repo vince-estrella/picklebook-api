@@ -15,5 +15,6 @@ namespace PickleballApi
         public DbSet<CourtOwner> CourtOwners { get; set; }
         public DbSet<Booking> Bookings { get; set; }
         public DbSet<User> Users { get; set; }
+        public DbSet<Report> Reports { get; set; }
     }
 }
