@@ -61,6 +61,9 @@ namespace PickleballApi.Controllers
 
             if (booking == null) return NotFound();
 
+            var hours = (decimal)(booking.EndTime - booking.StartTime).TotalHours;
+            var amount = hours * (booking.Court?.PricePerHour ?? 0);
+
             return Ok(new
             {
                 booking.Id,
@@ -71,6 +74,7 @@ namespace PickleballApi.Controllers
                 booking.PaymentMethod,
                 booking.PaymentStatus,
                 booking.Status,
+                amount,
                 court = booking.Court == null ? null : new
                 {
                     booking.Court.Id,
@@ -281,13 +285,28 @@ namespace PickleballApi.Controllers
             _context.Bookings.Add(booking);
             await _context.SaveChangesAsync();
 
-            if (!requiresOnlinePayment)
-            {
-                return Ok(new { booking, checkoutUrl = (string?)null });
-            }
-
             var hours = (decimal)(dto.EndTime - dto.StartTime).TotalHours;
             var amount = hours * court.PricePerHour;
+
+            object BuildBookingResponse() => new
+            {
+                booking.Id,
+                booking.BookingReference,
+                booking.Date,
+                booking.StartTime,
+                booking.EndTime,
+                booking.BookerName,
+                booking.BookerPhone,
+                booking.PaymentMethod,
+                booking.PaymentStatus,
+                booking.Status,
+                amount
+            };
+
+            if (!requiresOnlinePayment)
+            {
+                return Ok(new { booking = BuildBookingResponse(), checkoutUrl = (string?)null });
+            }
 
             try
             {
@@ -295,7 +314,7 @@ namespace PickleballApi.Controllers
                 booking.XenditInvoiceId = invoiceId;
                 await _context.SaveChangesAsync();
 
-                return Ok(new { booking, checkoutUrl });
+                return Ok(new { booking = BuildBookingResponse(), checkoutUrl });
             }
             catch (Exception ex)
             {
