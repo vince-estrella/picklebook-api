@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 
@@ -12,14 +13,16 @@ namespace PickleballApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IEmailService _emailService;
 
         private static readonly TimeZoneInfo PhilippineTimeZone =
             TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
 
-        public BookingsController(AppDbContext context, IHttpClientFactory httpClientFactory)
+        public BookingsController(AppDbContext context, IHttpClientFactory httpClientFactory, IEmailService emailService)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
+            _emailService = emailService;
         }
 
         private static DateTime NowInPhilippines()
@@ -273,6 +276,7 @@ namespace PickleballApi.Controllers
                 EndTime = dto.EndTime,
                 BookerName = dto.BookerName,
                 BookerPhone = dto.BookerPhone,
+                BookerEmail = dto.BookerEmail,
                 PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
                 PaymentStatus = "Unpaid",
                 // Every booking starts Pending now — online payments flip to
@@ -305,6 +309,10 @@ namespace PickleballApi.Controllers
 
             if (!requiresOnlinePayment)
             {
+                // Pay-at-venue bookings have nothing further to wait on, so the
+                // receipt goes out right away. Online bookings get theirs once
+                // the Xendit webhook confirms the payment actually went through.
+                await _emailService.SendBookingReceiptAsync(booking, court);
                 return Ok(new { booking = BuildBookingResponse(), checkoutUrl = (string?)null });
             }
 

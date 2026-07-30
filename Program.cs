@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PickleballApi;
+using PickleballApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -58,6 +59,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
+builder.Services.AddSingleton<IEmailService, EmailService>();
 
 var app = builder.Build();
 // Auto-run migrations on startup

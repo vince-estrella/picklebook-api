@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 using System.Text.Json;
 
 namespace PickleballApi.Controllers
@@ -10,10 +11,12 @@ namespace PickleballApi.Controllers
     public class PaymentsController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IEmailService _emailService;
 
-        public PaymentsController(AppDbContext context)
+        public PaymentsController(AppDbContext context, IEmailService emailService)
         {
             _context = context;
+            _emailService = emailService;
         }
 
         [HttpPost("webhook")]
@@ -36,13 +39,20 @@ namespace PickleballApi.Controllers
 
             if (status == "PAID")
             {
-                var booking = await _context.Bookings.FirstOrDefaultAsync(b => b.XenditInvoiceId == invoiceId);
+                var booking = await _context.Bookings
+                    .Include(b => b.Court)
+                    .FirstOrDefaultAsync(b => b.XenditInvoiceId == invoiceId);
                 if (booking != null)
                 {
                     booking.Status = "Confirmed";
                     booking.PaymentStatus = "Paid";
                     booking.PaidAt = DateTime.UtcNow;
                     await _context.SaveChangesAsync();
+
+                    if (booking.Court != null)
+                    {
+                        await _emailService.SendBookingReceiptAsync(booking, booking.Court);
+                    }
                 }
             }
 
