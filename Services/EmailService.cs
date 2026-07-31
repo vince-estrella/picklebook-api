@@ -1,5 +1,5 @@
 using System.Net;
-using System.Net.Mail;
+using System.Net.Http.Json;
 using PickleballApi.Models;
 
 namespace PickleballApi.Services
@@ -9,48 +9,61 @@ namespace PickleballApi.Services
         Task SendBookingReceiptAsync(Booking booking, Court court);
     }
 
-    // Sends booking receipts over Gmail SMTP. Credentials come from env vars
-    // so nothing secret lives in source control:
-    //   SMTP_EMAIL         - the Gmail address to send from
-    //   SMTP_APP_PASSWORD  - a Google Account "App Password" (not the login password)
-    // If either is missing, we skip sending instead of throwing, so a missing
-    // config never breaks booking creation or the Xendit webhook.
+    // Sends booking receipts via Resend (https://resend.com). Credentials
+    // come from env vars so nothing secret lives in source control:
+    //   RESEND_API_KEY    - required, from the Resend dashboard.
+    //   RESEND_FROM_EMAIL - optional. Defaults to Resend's shared test
+    //                       sender, which can only deliver to the email
+    //                       address the Resend account itself was signed up
+    //                       with. Verify a domain in Resend and set this to
+    //                       e.g. "PickleBook <receipts@yourdomain.com>" to
+    //                       send receipts to real customers.
+    // If RESEND_API_KEY is missing, we skip sending instead of throwing, so
+    // a missing config never breaks booking creation or the Xendit webhook.
     public class EmailService : IEmailService
     {
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        public EmailService(IHttpClientFactory httpClientFactory)
+        {
+            _httpClientFactory = httpClientFactory;
+        }
+
         public async Task SendBookingReceiptAsync(Booking booking, Court court)
         {
             if (string.IsNullOrWhiteSpace(booking.BookerEmail)) return;
 
-            var smtpEmail = Environment.GetEnvironmentVariable("SMTP_EMAIL");
-            var smtpPassword = Environment.GetEnvironmentVariable("SMTP_APP_PASSWORD");
-
-            if (string.IsNullOrEmpty(smtpEmail) || string.IsNullOrEmpty(smtpPassword))
+            var apiKey = Environment.GetEnvironmentVariable("RESEND_API_KEY");
+            if (string.IsNullOrEmpty(apiKey))
             {
-                Console.WriteLine("SMTP_EMAIL/SMTP_APP_PASSWORD not set — skipping booking receipt email.");
+                Console.WriteLine("RESEND_API_KEY not set — skipping booking receipt email.");
                 return;
             }
+
+            var fromEmail = Environment.GetEnvironmentVariable("RESEND_FROM_EMAIL") ?? "PickleBook <onboarding@resend.dev>";
 
             var hours = (decimal)(booking.EndTime - booking.StartTime).TotalHours;
             var amount = hours * court.PricePerHour;
 
-            using var message = new MailMessage
+            var payload = new
             {
-                From = new MailAddress(smtpEmail, "PickleBook"),
-                Subject = $"Your booking receipt — {court.Name}",
-                Body = BuildHtmlBody(booking, court, amount),
-                IsBodyHtml = true,
+                from = fromEmail,
+                to = new[] { booking.BookerEmail },
+                subject = $"Your booking receipt — {court.Name}",
+                html = BuildHtmlBody(booking, court, amount)
             };
-            message.To.Add(booking.BookerEmail);
 
-            using var client = new SmtpClient("smtp.gmail.com", 587)
-            {
-                Credentials = new NetworkCredential(smtpEmail, smtpPassword),
-                EnableSsl = true,
-            };
+            var client = _httpClientFactory.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
 
             try
             {
-                await client.SendMailAsync(message);
+                var response = await client.PostAsJsonAsync("https://api.resend.com/emails", payload);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Failed to send booking receipt email ({(int)response.StatusCode}): {body}");
+                }
             }
             catch (Exception ex)
             {
