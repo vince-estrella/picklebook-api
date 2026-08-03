@@ -284,19 +284,6 @@ namespace PickleballApi.Controllers
                 return BadRequest("This booking is outside the court's operating hours.");
             }
 
-            bool overlaps = await _context.Bookings.AnyAsync(b =>
-                b.CourtId == dto.CourtId &&
-                b.Date.Date == dto.Date.Date &&
-                b.Status != "Cancelled" &&
-                dto.StartTime < b.EndTime &&
-                dto.EndTime > b.StartTime
-            );
-
-            if (overlaps)
-            {
-                return BadRequest("This time slot is already booked.");
-            }
-
             int? userId = null;
             var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var roleClaim = User.FindFirstValue(ClaimTypes.Role);
@@ -307,33 +294,73 @@ namespace PickleballApi.Controllers
 
             bool requiresOnlinePayment = court.PaymentMethod == "Online" || court.PaymentMethod == "PayMongo";
 
-            var booking = new Booking
-            {
-                CourtId = dto.CourtId,
-                UserId = userId,
-                Date = dto.Date,
-                StartTime = dto.StartTime,
-                EndTime = dto.EndTime,
-                BookerName = dto.BookerName,
-                BookerPhone = dto.BookerPhone,
-                BookerEmail = dto.BookerEmail,
-                PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
-                PaymentStatus = "Unpaid",
-                // Every booking starts Pending now — online payments flip to
-                // Confirmed automatically via the Xendit webhook once paid;
-                // pay-at-venue bookings wait for the owner to confirm once
-                // the player checks in and actually pays on-site.
-                Status = "Pending",
-                PublicToken = Guid.NewGuid().ToString("N")
-            };
-            _context.Bookings.Add(booking);
-            await _context.SaveChangesAsync();
+            // Serialize "check for overlap, then insert" per court+date so two
+            // near-simultaneous requests can't both pass the overlap check
+            // before either one has actually saved (the previous race that
+            // allowed double-booking). Scoped to court+date, not the whole
+            // table, so unrelated bookings never wait on each other.
+            var lockName = $"booking:{dto.CourtId}:{dto.Date:yyyy-MM-dd}";
+            var lockAcquired = await _context.Database
+                .SqlQueryRaw<int?>("SELECT GET_LOCK({0}, {1})", lockName, 5)
+                .FirstAsync();
 
-            // BookingReference is derived from the real, DB-assigned Id — unique
-            // by definition, unlike the old random 4-digit + letter reference,
-            // which had no uniqueness check and only ~234,000 possible values.
-            booking.BookingReference = $"#PKL-{booking.Id:D5}";
-            await _context.SaveChangesAsync();
+            if (lockAcquired != 1)
+            {
+                return StatusCode(409, "Someone else is booking this slot right now. Please try again.");
+            }
+
+            Booking booking;
+            try
+            {
+                bool overlaps = await _context.Bookings.AnyAsync(b =>
+                    b.CourtId == dto.CourtId &&
+                    b.Date.Date == dto.Date.Date &&
+                    b.Status != "Cancelled" &&
+                    dto.StartTime < b.EndTime &&
+                    dto.EndTime > b.StartTime
+                );
+
+                if (overlaps)
+                {
+                    return BadRequest("This time slot is already booked.");
+                }
+
+                booking = new Booking
+                {
+                    CourtId = dto.CourtId,
+                    UserId = userId,
+                    Date = dto.Date,
+                    StartTime = dto.StartTime,
+                    EndTime = dto.EndTime,
+                    BookerName = dto.BookerName,
+                    BookerPhone = dto.BookerPhone,
+                    BookerEmail = dto.BookerEmail,
+                    PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
+                    PaymentStatus = "Unpaid",
+                    // Every booking starts Pending now — online payments flip to
+                    // Confirmed automatically via the Xendit webhook once paid;
+                    // pay-at-venue bookings wait for the owner to confirm once
+                    // the player checks in and actually pays on-site.
+                    Status = "Pending",
+                    PublicToken = Guid.NewGuid().ToString("N")
+                };
+                _context.Bookings.Add(booking);
+                await _context.SaveChangesAsync();
+
+                // BookingReference is derived from the real, DB-assigned Id —
+                // unique by definition, unlike the old random 4-digit + letter
+                // reference, which had no uniqueness check and only ~234,000
+                // possible values.
+                booking.BookingReference = $"#PKL-{booking.Id:D5}";
+                await _context.SaveChangesAsync();
+            }
+            finally
+            {
+                // Always release, even on the BadRequest/overlap path above —
+                // otherwise this court+date would stay locked until the
+                // connection is recycled.
+                await _context.Database.ExecuteSqlRawAsync("SELECT RELEASE_LOCK({0})", lockName);
+            }
 
             var hours = (decimal)(dto.EndTime - dto.StartTime).TotalHours;
             var amount = hours * court.PricePerHour;
