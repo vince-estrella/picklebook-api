@@ -4,6 +4,14 @@ namespace PickleballApi.Models
     {
         
         public string BookingReference { get; set; } = string.Empty;
+
+        // Proof-of-ownership token for the public GET /bookings/{id} lookup used
+        // by the post-Xendit-redirect confirmation page. The numeric Id alone is
+        // enumerable and isn't a security boundary — this is. Nullable because
+        // bookings created before this field existed won't have one; GetBooking
+        // treats a missing token (on either side) as "can't verify, deny."
+        public string? PublicToken { get; set; }
+
         public int Id { get; set; }
         public int CourtId { get; set; }
         public Court? Court { get; set; }

@@ -85,6 +85,12 @@ public async Task<ActionResult> GetCourt(int id)
             var court = await _context.Courts.FindAsync(id);
             if (court == null) return NotFound();
 
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (court.CourtOwnerId != ownerId)
+            {
+                return Forbid();
+            }
+
             if (file == null || file.Length == 0)
                 return BadRequest("No file uploaded.");
 

@@ -30,6 +30,28 @@ namespace PickleballApi.Controllers
             return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, PhilippineTimeZone);
         }
 
+        private static (TimeSpan Open, TimeSpan Close) GetCourtHoursForDate(Court court, DateTime date)
+        {
+            var hours = date.DayOfWeek switch
+            {
+                DayOfWeek.Saturday => (court.SatOpen, court.SatClose),
+                DayOfWeek.Sunday => (court.SunOpen, court.SunClose),
+                _ => (court.MonFriOpen, court.MonFriClose)
+            };
+
+            if (hours.Item1 == TimeSpan.Zero && hours.Item2 == TimeSpan.Zero)
+            {
+                return date.DayOfWeek switch
+                {
+                    DayOfWeek.Saturday => (new TimeSpan(7, 0, 0), new TimeSpan(21, 0, 0)),
+                    DayOfWeek.Sunday => (new TimeSpan(8, 0, 0), new TimeSpan(20, 0, 0)),
+                    _ => (new TimeSpan(6, 0, 0), new TimeSpan(22, 0, 0))
+                };
+            }
+
+            return hours;
+        }
+
         private async Task AutoCompleteExpiredBookings(List<Booking> bookings)
         {
             var nowLocal = NowInPhilippines();
@@ -50,19 +72,26 @@ namespace PickleballApi.Controllers
             }
         }
 
-        // GET: api/bookings/5 — used by BookingConfirmedPage after an external
-        // redirect back from Xendit's hosted checkout, where React Router
-        // state doesn't survive (the browser left the app entirely). No auth
-        // required: the booking id alone isn't sensitive, and this only
-        // returns booking + basic court info, nothing account-specific.
+        // GET: api/bookings/5?token=... — used by BookingConfirmedPage after an
+        // external redirect back from Xendit's hosted checkout, where React
+        // Router state doesn't survive (the browser left the app entirely).
+        // The numeric id is enumerable, so it's not treated as sensitive on its
+        // own: the caller must also present the PublicToken issued at booking
+        // creation. A missing/mismatched token — including bookings created
+        // before this field existed, where PublicToken is null — returns
+        // NotFound rather than Forbid, so we don't confirm the id exists.
         [HttpGet("{id}")]
-        public async Task<ActionResult> GetBooking(int id)
+        public async Task<ActionResult> GetBooking(int id, [FromQuery] string? token)
         {
             var booking = await _context.Bookings
                 .Include(b => b.Court)
                 .FirstOrDefaultAsync(b => b.Id == id);
 
             if (booking == null) return NotFound();
+            if (string.IsNullOrEmpty(booking.PublicToken) || booking.PublicToken != token)
+            {
+                return NotFound();
+            }
 
             var hours = (decimal)(booking.EndTime - booking.StartTime).TotalHours;
             var amount = hours * (booking.Court?.PricePerHour ?? 0);
@@ -244,6 +273,17 @@ namespace PickleballApi.Controllers
                 return BadRequest("Court does not exist.");
             }
 
+            if (dto.EndTime <= dto.StartTime)
+            {
+                return BadRequest("End time must be after start time.");
+            }
+
+            var (openTime, closeTime) = GetCourtHoursForDate(court, dto.Date);
+            if (dto.StartTime < openTime || dto.EndTime > closeTime)
+            {
+                return BadRequest("This booking is outside the court's operating hours.");
+            }
+
             bool overlaps = await _context.Bookings.AnyAsync(b =>
                 b.CourtId == dto.CourtId &&
                 b.Date.Date == dto.Date.Date &&
@@ -283,10 +323,16 @@ namespace PickleballApi.Controllers
                 // Confirmed automatically via the Xendit webhook once paid;
                 // pay-at-venue bookings wait for the owner to confirm once
                 // the player checks in and actually pays on-site.
-                Status = "Pending"
+                Status = "Pending",
+                PublicToken = Guid.NewGuid().ToString("N")
             };
-            booking.BookingReference = $"#PKL-{new Random().Next(1000, 9999)}-{(char)('A' + new Random().Next(0, 26))}";
             _context.Bookings.Add(booking);
+            await _context.SaveChangesAsync();
+
+            // BookingReference is derived from the real, DB-assigned Id — unique
+            // by definition, unlike the old random 4-digit + letter reference,
+            // which had no uniqueness check and only ~234,000 possible values.
+            booking.BookingReference = $"#PKL-{booking.Id:D5}";
             await _context.SaveChangesAsync();
 
             var hours = (decimal)(dto.EndTime - dto.StartTime).TotalHours;
@@ -318,7 +364,7 @@ namespace PickleballApi.Controllers
 
             try
             {
-                var (invoiceId, checkoutUrl) = await CreateXenditInvoice(booking.Id, amount, $"{court.Name} — {dto.Date:yyyy-MM-dd} {dto.StartTime}");
+                var (invoiceId, checkoutUrl) = await CreateXenditInvoice(booking.Id, booking.PublicToken!, amount, $"{court.Name} — {dto.Date:yyyy-MM-dd} {dto.StartTime}");
                 booking.XenditInvoiceId = invoiceId;
                 await _context.SaveChangesAsync();
 
@@ -333,7 +379,7 @@ namespace PickleballApi.Controllers
             }
         }
 
-        private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, decimal amount, string description)
+        private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, string publicToken, decimal amount, string description)
         {
             var secretKey = Environment.GetEnvironmentVariable("XENDIT_SECRET_KEY")!;
             var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://thepicklebook.vercel.app";
@@ -348,7 +394,7 @@ namespace PickleballApi.Controllers
                 amount = amount,
                 description,
                 currency = "PHP",
-                success_redirect_url = $"{frontendUrl}/booking/confirmed?bookingId={bookingId}"
+                success_redirect_url = $"{frontendUrl}/booking/confirmed?bookingId={bookingId}&token={Uri.EscapeDataString(publicToken)}"
             };
 
             var response = await client.PostAsJsonAsync("https://api.xendit.co/v2/invoices", payload);
