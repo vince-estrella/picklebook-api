@@ -301,7 +301,7 @@ namespace PickleballApi.Controllers
             // table, so unrelated bookings never wait on each other.
             var lockName = $"booking:{dto.CourtId}:{dto.Date:yyyy-MM-dd}";
             var lockAcquired = await _context.Database
-                .SqlQueryRaw<int?>("SELECT GET_LOCK({0}, {1})", lockName, 5)
+                .SqlQueryRaw<int?>("SELECT GET_LOCK({0}, {1}) AS `Value`", lockName, 5)
                 .FirstAsync();
 
             if (lockAcquired != 1)
