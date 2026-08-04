@@ -72,6 +72,52 @@ namespace PickleballApi.Controllers
             }
         }
 
+        // Frees up slots that were held by a booking that never actually
+        // completed:
+        //  - Online payments get a 15-minute window from CreatedAt to finish
+        //    checkout. Someone who starts paying and abandons the tab (or a
+        //    slow bank OTP flow) shouldn't hold the slot indefinitely — past
+        //    the window, unpaid Online bookings auto-cancel.
+        //  - Pay-at-venue bookings have no time limit while Pending — the
+        //    owner confirms those manually when the player checks in, and
+        //    that can legitimately happen right up to game time. But if the
+        //    slot's own time has already passed and it's still sitting
+        //    Pending, nobody ever confirmed it — auto-cancel it too, for
+        //    either payment method, so it doesn't linger forever.
+        // If a late Xendit "paid" webhook arrives for a booking this already
+        // cancelled, PaymentsController.XenditWebhook handles resurrecting it
+        // (if the slot's still free) or logging it for manual follow-up (if
+        // someone else already took it).
+        private async Task AutoExpireStalePendingBookings(List<Booking> bookings)
+        {
+            var nowUtc = DateTime.UtcNow;
+            var nowLocal = NowInPhilippines();
+            bool changed = false;
+
+            foreach (var b in bookings)
+            {
+                if (b.Status != "Pending") continue;
+
+                bool onlinePaymentWindowExpired = b.PaymentMethod == "Online"
+                    && b.PaymentStatus != "Paid"
+                    && (nowUtc - b.CreatedAt) >= TimeSpan.FromMinutes(15);
+
+                bool slotTimeAlreadyPassed = (b.Date.Date + b.EndTime) <= nowLocal;
+
+                if (onlinePaymentWindowExpired || slotTimeAlreadyPassed)
+                {
+                    b.Status = "Cancelled";
+                    b.CancelledAt = nowUtc;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                await _context.SaveChangesAsync();
+            }
+        }
+
         // GET: api/bookings/5?token=... — used by BookingConfirmedPage after an
         // external redirect back from Xendit's hosted checkout, where React
         // Router state doesn't survive (the browser left the app entirely).
@@ -170,6 +216,7 @@ namespace PickleballApi.Controllers
                 .ToListAsync();
 
             await AutoCompleteExpiredBookings(bookings);
+            await AutoExpireStalePendingBookings(bookings);
 
             return bookings;
         }
@@ -189,6 +236,7 @@ namespace PickleballApi.Controllers
                 .ToListAsync();
 
             await AutoCompleteExpiredBookings(bookings);
+            await AutoExpireStalePendingBookings(bookings);
 
             var result = bookings.Select(b => new
             {
@@ -220,6 +268,7 @@ namespace PickleballApi.Controllers
                 .ToListAsync();
 
             await AutoCompleteExpiredBookings(bookings);
+            await AutoExpireStalePendingBookings(bookings);
 
             var today = DateTime.Today;
             var nowLocal = NowInPhilippines();
@@ -312,9 +361,18 @@ namespace PickleballApi.Controllers
             Booking booking;
             try
             {
-                bool overlaps = await _context.Bookings.AnyAsync(b =>
-                    b.CourtId == dto.CourtId &&
-                    b.Date.Date == dto.Date.Date &&
+                // Fetch actual candidate rows (not just AnyAsync) so we can run
+                // AutoExpireStalePendingBookings against them first — this is
+                // the moment a stale/abandoned hold on this exact slot actually
+                // gets freed, right before we'd otherwise wrongly reject a new
+                // booking because of it.
+                var candidateBookings = await _context.Bookings
+                    .Where(b => b.CourtId == dto.CourtId && b.Date.Date == dto.Date.Date && b.Status != "Cancelled")
+                    .ToListAsync();
+
+                await AutoExpireStalePendingBookings(candidateBookings);
+
+                bool overlaps = candidateBookings.Any(b =>
                     b.Status != "Cancelled" &&
                     dto.StartTime < b.EndTime &&
                     dto.EndTime > b.StartTime
@@ -342,7 +400,8 @@ namespace PickleballApi.Controllers
                     // pay-at-venue bookings wait for the owner to confirm once
                     // the player checks in and actually pays on-site.
                     Status = "Pending",
-                    PublicToken = Guid.NewGuid().ToString("N")
+                    PublicToken = Guid.NewGuid().ToString("N"),
+                    CreatedAt = DateTime.UtcNow
                 };
                 _context.Bookings.Add(booking);
                 await _context.SaveChangesAsync();

@@ -21,6 +21,13 @@ namespace PickleballApi.Models
         public TimeSpan StartTime { get; set; }
         public TimeSpan EndTime { get; set; }
 
+        // UTC. Used to measure the 15-minute unpaid-online-booking expiry
+        // window in BookingsController — see AutoExpireStalePendingBookings.
+        // Bookings created before this field existed default to the migration
+        // apply time, which just means they won't retroactively expire; by
+        // then they'd already been resolved one way or another.
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
         public string BookerName { get; set; } = string.Empty;
         public string BookerPhone { get; set; } = string.Empty;
         public string BookerEmail { get; set; } = string.Empty;
