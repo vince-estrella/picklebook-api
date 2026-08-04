@@ -3,6 +3,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
 
@@ -45,6 +46,7 @@ namespace PickleballApi.Controllers
             return Ok(new { owner.Id, owner.FirstName, owner.LastName, owner.Email });
         }
 
+        [EnableRateLimiting("auth")]
         [HttpPost("login")]
         public async Task<ActionResult> Login(LoginDto dto)
         {

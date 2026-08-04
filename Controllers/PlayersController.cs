@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -40,11 +40,14 @@ namespace PickleballApi.Controllers
         }
 
         // POST: api/players/extract-names
-        // Assumption: this is an owner-only tool (QueueManager is a court
-        // owner's queue management screen), so gated the same way as other
-        // owner endpoints. Remove [Authorize] below if QueueManager actually
-        // isn't behind your owner-auth wrapper and this needs to be public.
-        [Authorize(Roles = "CourtOwner")]
+        // Queue Manager (QueueManager.jsx) is a public page with no login
+        // wall of its own, so this can't require CourtOwner auth — it never
+        // sees an owner token in normal use, which was causing every real
+        // call to 403. Rate-limited instead (see Program.cs, "extract-names"
+        // policy): unauthenticated + costs real money per call via
+        // Anthropic's API, so the rate limit is what actually protects this
+        // now, not a login wall.
+        [EnableRateLimiting("extract-names")]
         [HttpPost("extract-names")]
         [RequestSizeLimit(MaxFileSizeBytes)]
         public async Task<ActionResult> ExtractNames(IFormFile? image)

@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
 using PickleballApi.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 
 namespace PickleballApi.Controllers
@@ -270,8 +271,8 @@ namespace PickleballApi.Controllers
             await AutoCompleteExpiredBookings(bookings);
             await AutoExpireStalePendingBookings(bookings);
 
-            var today = DateTime.Today;
             var nowLocal = NowInPhilippines();
+            var today = nowLocal.Date;
 
             var usersCurrentlyBooked = bookings
                 .Where(b => b.Status == "Confirmed"
@@ -285,7 +286,7 @@ namespace PickleballApi.Controllers
             var activeBookings = bookings.Count(b => b.Date.Date >= today && b.Status == "Confirmed");
 
             var monthlyRevenue = bookings
-                .Where(b => b.Date.Month == today.Month && b.Date.Year == today.Year)
+                .Where(b => b.Date.Month == today.Month && b.Date.Year == today.Year && b.PaymentStatus == "Paid")
                 .Sum(b => (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court!.PricePerHour);
 
             var weekStart = today.AddDays(-6);
@@ -293,7 +294,7 @@ namespace PickleballApi.Controllers
             {
                 var day = weekStart.AddDays(offset);
                 var total = bookings
-                    .Where(b => b.Date.Date == day.Date)
+                    .Where(b => b.Date.Date == day.Date && b.PaymentStatus == "Paid")
                     .Sum(b => (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court!.PricePerHour);
                 return new
                 {
@@ -313,6 +314,7 @@ namespace PickleballApi.Controllers
         }
 
         // POST: api/bookings
+        [EnableRateLimiting("booking")]
         [HttpPost]
         public async Task<ActionResult> CreateBooking(CreateBookingDto dto)
         {

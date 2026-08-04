@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
 using CloudinaryDotNet;
@@ -47,6 +48,7 @@ namespace PickleballApi.Controllers
             return Ok(new { user.Id, user.FirstName, user.LastName, user.Email });
         }
 
+        [EnableRateLimiting("auth")]
         [HttpPost("login")]
         public async Task<ActionResult> Login(LoginDto dto)
         {
