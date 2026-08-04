@@ -327,6 +327,13 @@ namespace PickleballApi.Controllers
                 return BadRequest("End time must be after start time.");
             }
 
+            var nowLocal = NowInPhilippines();
+            if (dto.Date.Date < nowLocal.Date ||
+                (dto.Date.Date == nowLocal.Date && dto.StartTime <= nowLocal.TimeOfDay))
+            {
+                return BadRequest("Cannot book a date or time slot that's already in the past.");
+            }
+
             var (openTime, closeTime) = GetCourtHoursForDate(court, dto.Date);
             if (dto.StartTime < openTime || dto.EndTime > closeTime)
             {
