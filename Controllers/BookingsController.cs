@@ -53,6 +53,69 @@ namespace PickleballApi.Controllers
             return hours;
         }
 
+        private static string GenerateRoomCode()
+        {
+            const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+            Span<char> code = stackalloc char[5];
+            for (var i = 0; i < code.Length; i++)
+            {
+                code[i] = chars[Random.Shared.Next(chars.Length)];
+            }
+            return new string(code);
+        }
+
+        private async Task<OpenPlaySession> ActivateOpenPlaySession(Booking booking)
+        {
+            var existing = await _context.OpenPlaySessions
+                .FirstOrDefaultAsync(s => s.BookingId == booking.Id);
+
+            if (existing != null)
+            {
+                if (existing.Status != "Active")
+                {
+                    existing.Status = "Active";
+                    existing.ActivatedAt ??= DateTime.UtcNow;
+                }
+                return existing;
+            }
+
+            if (booking.UserId == null)
+            {
+                throw new InvalidOperationException("Open play bookings require a host player account.");
+            }
+
+            string roomCode;
+            do
+            {
+                roomCode = GenerateRoomCode();
+            } while (await _context.OpenPlaySessions.AnyAsync(s => s.RoomCode == roomCode));
+
+            var session = new OpenPlaySession
+            {
+                BookingId = booking.Id,
+                HostUserId = booking.UserId.Value,
+                RoomCode = roomCode,
+                Status = "Active",
+                CreatedAt = DateTime.UtcNow,
+                ActivatedAt = DateTime.UtcNow
+            };
+
+            _context.OpenPlaySessions.Add(session);
+            await _context.SaveChangesAsync();
+
+            _context.OpenPlayParticipants.Add(new OpenPlayParticipant
+            {
+                OpenPlaySessionId = session.Id,
+                UserId = booking.UserId.Value,
+                PaymentStatus = "PaidCash",
+                CheckInStatus = "Joined",
+                JoinedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync();
+
+            return session;
+        }
+
         private async Task AutoCompleteExpiredBookings(List<Booking> bookings)
         {
             var nowLocal = NowInPhilippines();
@@ -132,6 +195,7 @@ namespace PickleballApi.Controllers
         {
             var booking = await _context.Bookings
                 .Include(b => b.Court)
+                .Include(b => b.OpenPlaySession)
                 .FirstOrDefaultAsync(b => b.Id == id);
 
             if (booking == null) return NotFound();
@@ -147,13 +211,29 @@ namespace PickleballApi.Controllers
             {
                 booking.Id,
                 booking.BookingReference,
+                booking.PublicToken,
                 booking.Date,
                 booking.StartTime,
                 booking.EndTime,
                 booking.PaymentMethod,
+                booking.BookingType,
+                booking.OpenPlayMaxPlayers,
+                booking.OpenPlayPricePerPlayer,
+                booking.OpenPlaySkillLevel,
+                booking.OpenPlayNote,
+                booking.OpenPlayReclubLink,
                 booking.PaymentStatus,
                 booking.Status,
                 amount,
+                openPlay = booking.BookingType == "OpenPlay"
+                    ? new
+                    {
+                        active = booking.OpenPlaySession != null && booking.OpenPlaySession.Status == "Active",
+                        roomCode = booking.OpenPlaySession != null && booking.OpenPlaySession.Status == "Active"
+                            ? booking.OpenPlaySession.RoomCode
+                            : null
+                    }
+                    : null,
                 court = booking.Court == null ? null : new
                 {
                     booking.Court.Id,
@@ -189,12 +269,19 @@ namespace PickleballApi.Controllers
             {
                 booking.Id,
                 booking.BookingReference,
+                booking.PublicToken,
                 booking.Date,
                 booking.StartTime,
                 booking.EndTime,
                 booking.BookerName,
                 booking.BookerPhone,
                 booking.PaymentMethod,
+                booking.BookingType,
+                booking.OpenPlayMaxPlayers,
+                booking.OpenPlayPricePerPlayer,
+                booking.OpenPlaySkillLevel,
+                booking.OpenPlayNote,
+                booking.OpenPlayReclubLink,
                 booking.PaymentStatus,
                 booking.Status,
                 amount,
@@ -248,6 +335,8 @@ namespace PickleballApi.Controllers
                 b.EndTime,
                 b.BookerName,
                 b.BookerPhone,
+                b.BookingType,
+                b.OpenPlayPricePerPlayer,
                 b.Status,
                 courtName = b.Court!.Name,
                 amount = (decimal)(b.EndTime - b.StartTime).TotalHours * b.Court.PricePerHour
@@ -350,6 +439,37 @@ namespace PickleballApi.Controllers
                 userId = int.Parse(userIdClaim);
             }
 
+            var bookingType = dto.BookingType == "OpenPlay" ? "OpenPlay" : "Standard";
+            if (bookingType == "OpenPlay")
+            {
+                if (userId == null)
+                {
+                    return Unauthorized("Log in as a player to create an open play booking.");
+                }
+
+                if (!court.AllowOpenPlay)
+                {
+                    return BadRequest("This court does not allow player-hosted open play.");
+                }
+
+                if (dto.OpenPlayMaxPlayers is < 2 or > 64)
+                {
+                    return BadRequest("Open play max players must be between 2 and 64.");
+                }
+
+                if (dto.OpenPlayPricePerPlayer is < 0)
+                {
+                    return BadRequest("Open play price per player cannot be negative.");
+                }
+
+                if (!string.IsNullOrWhiteSpace(dto.OpenPlayReclubLink) &&
+                    (!Uri.TryCreate(dto.OpenPlayReclubLink.Trim(), UriKind.Absolute, out var reclubUri) ||
+                     (reclubUri.Scheme != Uri.UriSchemeHttp && reclubUri.Scheme != Uri.UriSchemeHttps)))
+                {
+                    return BadRequest("Reclub link must be a valid web URL.");
+                }
+            }
+
             bool requiresOnlinePayment = court.PaymentMethod == "Online";
 
             // Serialize "check for overlap, then insert" per court+date so two
@@ -403,6 +523,12 @@ namespace PickleballApi.Controllers
                     BookerPhone = dto.BookerPhone,
                     BookerEmail = dto.BookerEmail,
                     PaymentMethod = requiresOnlinePayment ? "Online" : "PayAtVenue",
+                    BookingType = bookingType,
+                    OpenPlayMaxPlayers = bookingType == "OpenPlay" ? dto.OpenPlayMaxPlayers ?? 8 : null,
+                    OpenPlayPricePerPlayer = bookingType == "OpenPlay" ? dto.OpenPlayPricePerPlayer : null,
+                    OpenPlaySkillLevel = bookingType == "OpenPlay" ? string.IsNullOrWhiteSpace(dto.OpenPlaySkillLevel) ? "All Levels" : dto.OpenPlaySkillLevel.Trim() : null,
+                    OpenPlayNote = bookingType == "OpenPlay" ? dto.OpenPlayNote?.Trim() : null,
+                    OpenPlayReclubLink = bookingType == "OpenPlay" ? dto.OpenPlayReclubLink?.Trim() : null,
                     PaymentStatus = "Unpaid",
                     // Every booking starts Pending now — online payments flip to
                     // Confirmed automatically via the Xendit webhook once paid;
@@ -442,6 +568,12 @@ namespace PickleballApi.Controllers
                 booking.EndTime,
                 booking.BookerName,
                 booking.BookerPhone,
+                booking.BookingType,
+                booking.OpenPlayMaxPlayers,
+                booking.OpenPlayPricePerPlayer,
+                booking.OpenPlaySkillLevel,
+                booking.OpenPlayNote,
+                booking.OpenPlayReclubLink,
                 booking.PaymentMethod,
                 booking.PaymentStatus,
                 booking.Status,
@@ -477,7 +609,7 @@ namespace PickleballApi.Controllers
         private async Task<(string invoiceId, string checkoutUrl)> CreateXenditInvoice(int bookingId, string publicToken, decimal amount, string description)
         {
             var secretKey = Environment.GetEnvironmentVariable("XENDIT_SECRET_KEY")!;
-            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://thepicklebook.vercel.app";
+            var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "https://www.thepicklebook.app";
 
             var client = _httpClientFactory.CreateClient();
             var authValue = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{secretKey}:"));
@@ -543,14 +675,39 @@ namespace PickleballApi.Controllers
                 booking.PaidAt = DateTime.UtcNow;
             }
 
+            OpenPlaySession? openPlaySession = null;
+            if (status == "Confirmed" && booking.BookingType == "OpenPlay")
+            {
+                openPlaySession = await ActivateOpenPlaySession(booking);
+            }
+
             if (status == "Cancelled" && booking.CancelledAt == null)
             {
                 booking.CancelledAt = DateTime.UtcNow;
             }
 
+            if (status != "Confirmed" && booking.BookingType == "OpenPlay")
+            {
+                openPlaySession ??= await _context.OpenPlaySessions
+                    .FirstOrDefaultAsync(s => s.BookingId == booking.Id);
+
+                if (openPlaySession != null)
+                {
+                    openPlaySession.Status = status == "Cancelled" ? "Cancelled" : "Closed";
+                }
+            }
+
             await _context.SaveChangesAsync();
 
-            return Ok(new { booking.Id, booking.Status, booking.PaymentStatus });
+            return Ok(new
+            {
+                booking.Id,
+                booking.Status,
+                booking.PaymentStatus,
+                openPlay = openPlaySession == null
+                    ? null
+                    : new { openPlaySession.RoomCode, openPlaySession.Status }
+            });
         }
     }
 }

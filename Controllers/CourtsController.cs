@@ -58,6 +58,7 @@ public async Task<ActionResult> GetCourt(int id)
         court.Amenities,
         court.Rules,
         court.PaymentMethod,
+        court.AllowOpenPlay,
         court.MonFriOpen,
         court.MonFriClose,
         court.SatOpen,
@@ -144,6 +145,7 @@ public async Task<ActionResult> GetCourt(int id)
                 return Forbid();
             }
             existing.PaymentMethod = court.PaymentMethod;
+            existing.AllowOpenPlay = court.AllowOpenPlay;
             existing.Name = court.Name;
             existing.Address = court.Address;
             existing.Type = court.Type;

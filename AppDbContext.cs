@@ -14,6 +14,8 @@ namespace PickleballApi
         public DbSet<CourtImage> CourtImages { get; set; }
         public DbSet<CourtOwner> CourtOwners { get; set; }
         public DbSet<Booking> Bookings { get; set; }
+        public DbSet<OpenPlaySession> OpenPlaySessions { get; set; }
+        public DbSet<OpenPlayParticipant> OpenPlayParticipants { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<Report> Reports { get; set; }
 
@@ -34,6 +36,26 @@ namespace PickleballApi
 
             modelBuilder.Entity<CourtOwner>()
                 .HasIndex(o => o.Email)
+                .IsUnique();
+
+            modelBuilder.Entity<Court>()
+                .Property(c => c.AllowOpenPlay)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<Booking>()
+                .Property(b => b.BookingType)
+                .HasDefaultValue("Standard");
+
+            modelBuilder.Entity<OpenPlaySession>()
+                .HasIndex(s => s.BookingId)
+                .IsUnique();
+
+            modelBuilder.Entity<OpenPlaySession>()
+                .HasIndex(s => s.RoomCode)
+                .IsUnique();
+
+            modelBuilder.Entity<OpenPlayParticipant>()
+                .HasIndex(p => new { p.OpenPlaySessionId, p.UserId })
                 .IsUnique();
         }
     }

@@ -99,6 +99,7 @@ namespace PickleballApi.Controllers
 
             var bookings = await _context.Bookings
                 .Include(b => b.Court)
+                .Include(b => b.OpenPlaySession)
                 .Where(b => b.UserId == userId)
                 .OrderByDescending(b => b.Date)
                 .ThenByDescending(b => b.StartTime)
@@ -112,6 +113,17 @@ namespace PickleballApi.Controllers
                 b.StartTime,
                 b.EndTime,
                 b.Status,
+                b.BookingType,
+                b.OpenPlayPricePerPlayer,
+                openPlay = b.BookingType == "OpenPlay"
+                    ? new
+                    {
+                        active = b.OpenPlaySession != null && b.OpenPlaySession.Status == "Active",
+                        roomCode = b.OpenPlaySession != null && b.OpenPlaySession.Status == "Active"
+                            ? b.OpenPlaySession.RoomCode
+                            : null
+                    }
+                    : null,
                 courtId = b.CourtId,
                 courtName = b.Court!.Name,
                 courtAddress = b.Court.Address,

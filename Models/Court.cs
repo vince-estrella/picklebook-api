@@ -29,6 +29,7 @@ namespace PickleballApi.Models
         // or pay in person when they arrive. Defaults to PayAtVenue so existing courts
         // keep working exactly as before.
         public string PaymentMethod { get; set; } = "PayAtVenue";
+        public bool AllowOpenPlay { get; set; } = true;
 
         public int CourtOwnerId { get; set; }
         public CourtOwner? CourtOwner { get; set; }

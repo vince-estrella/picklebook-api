@@ -33,10 +33,17 @@ namespace PickleballApi.Models
         public string BookerEmail { get; set; } = string.Empty;
 
         public string PaymentMethod { get; set; } = "PayAtVenue"; // PayAtVenue, Online
+        public string BookingType { get; set; } = "Standard"; // Standard, OpenPlay
+        public int? OpenPlayMaxPlayers { get; set; }
+        public decimal? OpenPlayPricePerPlayer { get; set; }
+        public string? OpenPlaySkillLevel { get; set; }
+        public string? OpenPlayNote { get; set; }
+        public string? OpenPlayReclubLink { get; set; }
         public string PaymentStatus { get; set; } = "Unpaid"; // Unpaid, Pending, Paid, Refunded, Failed
         public string Status { get; set; } = "Pending"; // Pending, Confirmed, Cancelled, Completed, NoShow
         public DateTime? PaidAt { get; set; }
         public DateTime? CancelledAt { get; set; }
         public string? XenditInvoiceId { get; set; }
+        public OpenPlaySession? OpenPlaySession { get; set; }
     }
 }
