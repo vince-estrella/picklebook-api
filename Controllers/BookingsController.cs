@@ -350,7 +350,7 @@ namespace PickleballApi.Controllers
                 userId = int.Parse(userIdClaim);
             }
 
-            bool requiresOnlinePayment = court.PaymentMethod == "Online" || court.PaymentMethod == "PayMongo";
+            bool requiresOnlinePayment = court.PaymentMethod == "Online";
 
             // Serialize "check for overlap, then insert" per court+date so two
             // near-simultaneous requests can't both pass the overlap check

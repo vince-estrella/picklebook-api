@@ -25,7 +25,7 @@ namespace PickleballApi.Models
         public decimal PricePerHour { get; set; }
         public string? ExternalBookingUrl { get; set; }
 
-        // "PayAtVenue" or "PayMongo" — determines whether bookers pay online at checkout
+        // "PayAtVenue" or "Online" — determines whether bookers pay online at checkout
         // or pay in person when they arrive. Defaults to PayAtVenue so existing courts
         // keep working exactly as before.
         public string PaymentMethod { get; set; } = "PayAtVenue";
