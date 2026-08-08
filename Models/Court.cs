@@ -30,6 +30,8 @@ namespace PickleballApi.Models
         // keep working exactly as before.
         public string PaymentMethod { get; set; } = "PayAtVenue";
         public bool AllowOpenPlay { get; set; } = true;
+        public int? VenueId { get; set; }
+        public Venue? Venue { get; set; }
 
         public int CourtOwnerId { get; set; }
         public CourtOwner? CourtOwner { get; set; }

@@ -23,11 +23,14 @@ namespace PickleballApi.Controllers
 
         // GET: api/courts
         [HttpGet]
-        public async Task<ActionResult<List<Court>>> GetCourts()
+        public async Task<ActionResult> GetCourts()
         {
-            return await _context.Courts
+            var courts = await _context.Courts
                 .Include(c => c.Images)
+                .Include(c => c.Venue)
                 .ToListAsync();
+
+            return Ok(courts.Select(ToCourtDto));
         }
 
         // GET: api/courts/5
@@ -37,6 +40,8 @@ public async Task<ActionResult> GetCourt(int id)
     var court = await _context.Courts
         .Include(c => c.Images)
         .Include(c => c.CourtOwner)
+        .Include(c => c.Venue)
+        .ThenInclude(v => v!.Courts)
         .FirstOrDefaultAsync(c => c.Id == id);
 
     if (court == null)
@@ -48,6 +53,7 @@ public async Task<ActionResult> GetCourt(int id)
     {
         court.Id,
         court.CourtOwnerId,
+        court.VenueId,
         court.Name,
         court.Address,
         court.Type,
@@ -69,6 +75,31 @@ public async Task<ActionResult> GetCourt(int id)
         court.Latitude,
         court.Longitude,
         court.Images,
+        venue = court.Venue == null ? null : new
+        {
+            court.Venue.Id,
+            court.Venue.Name,
+            court.Venue.Address,
+            court.Venue.Latitude,
+            court.Venue.Longitude,
+            court.Venue.Description,
+            court.Venue.Amenities,
+            court.Venue.ExternalBookingUrl,
+            courtCount = court.Venue.Courts.Count,
+            courts = court.Venue.Courts
+                .OrderBy(c => c.Name)
+                .Select(c => new
+                {
+                    c.Id,
+                    c.Name,
+                    c.Type,
+                    c.SurfaceType,
+                    c.PricePerHour,
+                    c.MaxPlayers,
+                    c.AllowOpenPlay
+                })
+                .ToList()
+        },
         ownerName = court.CourtOwner != null
             ? $"{court.CourtOwner.FirstName} {court.CourtOwner.LastName}".Trim()
             : null,
@@ -144,16 +175,18 @@ public async Task<ActionResult> GetCourt(int id)
             {
                 return Forbid();
             }
+            var venue = await ResolveVenue(ownerId, court);
             existing.PaymentMethod = court.PaymentMethod;
             existing.AllowOpenPlay = court.AllowOpenPlay;
+            existing.VenueId = venue.Id;
             existing.Name = court.Name;
-            existing.Address = court.Address;
+            existing.Address = venue.Address;
             existing.Type = court.Type;
             existing.SurfaceType = court.SurfaceType;
             existing.MaxPlayers = court.MaxPlayers;
             existing.PricePerHour = court.PricePerHour;
-            existing.Description = court.Description;
-            existing.Amenities = court.Amenities;
+            existing.Description = string.IsNullOrWhiteSpace(court.Description) ? venue.Description : court.Description;
+            existing.Amenities = string.IsNullOrWhiteSpace(court.Amenities) ? venue.Amenities : court.Amenities;
             existing.Rules = court.Rules;
             existing.MonFriOpen = court.MonFriOpen;
             existing.MonFriClose = court.MonFriClose;
@@ -161,9 +194,9 @@ public async Task<ActionResult> GetCourt(int id)
             existing.SatClose = court.SatClose;
             existing.SunOpen = court.SunOpen;
             existing.SunClose = court.SunClose;
-            existing.ExternalBookingUrl = court.ExternalBookingUrl;
-            existing.Latitude = court.Latitude;
-            existing.Longitude = court.Longitude;
+            existing.ExternalBookingUrl = court.ExternalBookingUrl ?? venue.ExternalBookingUrl;
+            existing.Latitude = venue.Latitude;
+            existing.Longitude = venue.Longitude;
 
             await _context.SaveChangesAsync();
             return Ok(existing);
@@ -176,23 +209,32 @@ public async Task<ActionResult> GetCourt(int id)
         {
             var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             court.CourtOwnerId = ownerId;
+            var venue = await ResolveVenue(ownerId, court);
+            court.VenueId = venue.Id;
+            court.Address = venue.Address;
+            court.Latitude = venue.Latitude;
+            court.Longitude = venue.Longitude;
+            if (string.IsNullOrWhiteSpace(court.Description)) court.Description = venue.Description;
+            if (string.IsNullOrWhiteSpace(court.Amenities)) court.Amenities = venue.Amenities;
+            court.ExternalBookingUrl ??= venue.ExternalBookingUrl;
 
             _context.Courts.Add(court);
             await _context.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetCourts), court);
+            return CreatedAtAction(nameof(GetCourt), new { id = court.Id }, ToCourtDto(court));
         }
 
         // GET: api/courts/owner
         [Authorize(Roles = "CourtOwner")]
         [HttpGet("owner")]
-        public async Task<ActionResult<List<Court>>> GetOwnerCourts()
+        public async Task<ActionResult> GetOwnerCourts()
         {
             var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             var courts = await _context.Courts
                 .Include(c => c.Images)
+                .Include(c => c.Venue)
                 .Where(c => c.CourtOwnerId == ownerId)
                 .ToListAsync();
-            return courts;
+            return Ok(courts.Select(ToCourtDto));
         }
 
         // DELETE: api/courts/5/images/12
@@ -325,6 +367,92 @@ public async Task<ActionResult> GetCourt(int id)
             {
                 return null;
             }
+        }
+
+        private async Task<Venue> ResolveVenue(int ownerId, Court court)
+        {
+            if (court.VenueId.HasValue)
+            {
+                var existingVenue = await _context.Venues
+                    .FirstOrDefaultAsync(v => v.Id == court.VenueId.Value && v.CourtOwnerId == ownerId);
+                if (existingVenue != null) return existingVenue;
+            }
+
+            var venueName = court.Venue?.Name;
+            if (string.IsNullOrWhiteSpace(venueName))
+            {
+                venueName = string.IsNullOrWhiteSpace(court.Address) ? court.Name : court.Address;
+            }
+
+            venueName = venueName.Trim();
+            var venueAddress = string.IsNullOrWhiteSpace(court.Venue?.Address)
+                ? court.Address
+                : court.Venue.Address;
+
+            var venue = await _context.Venues.FirstOrDefaultAsync(v =>
+                v.CourtOwnerId == ownerId &&
+                v.Name == venueName &&
+                v.Address == venueAddress);
+
+            if (venue != null) return venue;
+
+            venue = new Venue
+            {
+                CourtOwnerId = ownerId,
+                Name = venueName,
+                Address = venueAddress,
+                Latitude = court.Venue?.Latitude ?? court.Latitude,
+                Longitude = court.Venue?.Longitude ?? court.Longitude,
+                Description = court.Venue?.Description ?? court.Description,
+                Amenities = court.Venue?.Amenities ?? court.Amenities,
+                ExternalBookingUrl = court.Venue?.ExternalBookingUrl ?? court.ExternalBookingUrl
+            };
+
+            _context.Venues.Add(venue);
+            await _context.SaveChangesAsync();
+            return venue;
+        }
+
+        private static object ToCourtDto(Court court)
+        {
+            return new
+            {
+                court.Id,
+                court.CourtOwnerId,
+                court.VenueId,
+                court.Name,
+                court.Address,
+                court.Type,
+                court.SurfaceType,
+                court.MaxPlayers,
+                court.PricePerHour,
+                court.Description,
+                court.Amenities,
+                court.Rules,
+                court.PaymentMethod,
+                court.AllowOpenPlay,
+                court.MonFriOpen,
+                court.MonFriClose,
+                court.SatOpen,
+                court.SatClose,
+                court.SunOpen,
+                court.SunClose,
+                court.ExternalBookingUrl,
+                court.Latitude,
+                court.Longitude,
+                court.Images,
+                venue = court.Venue == null ? null : new
+                {
+                    court.Venue.Id,
+                    court.Venue.Name,
+                    court.Venue.Address,
+                    court.Venue.Latitude,
+                    court.Venue.Longitude,
+                    court.Venue.Description,
+                    court.Venue.Amenities,
+                    court.Venue.ExternalBookingUrl
+                }
+            };
         }
     }
 }

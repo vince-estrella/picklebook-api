@@ -11,6 +11,7 @@ namespace PickleballApi
         public DbSet<Conversation> Conversations { get; set; }
         public DbSet<Message> Messages { get; set; }
         public DbSet<Court> Courts { get; set; }
+        public DbSet<Venue> Venues { get; set; }
         public DbSet<CourtImage> CourtImages { get; set; }
         public DbSet<CourtOwner> CourtOwners { get; set; }
         public DbSet<Booking> Bookings { get; set; }
@@ -41,6 +42,12 @@ namespace PickleballApi
             modelBuilder.Entity<Court>()
                 .Property(c => c.AllowOpenPlay)
                 .HasDefaultValue(true);
+
+            modelBuilder.Entity<Venue>()
+                .HasIndex(v => new { v.CourtOwnerId, v.Name });
+
+            modelBuilder.Entity<Court>()
+                .HasIndex(c => c.VenueId);
 
             modelBuilder.Entity<Booking>()
                 .Property(b => b.BookingType)
