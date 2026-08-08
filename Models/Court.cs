@@ -24,6 +24,7 @@ namespace PickleballApi.Models
 
         public decimal PricePerHour { get; set; }
         public string? ExternalBookingUrl { get; set; }
+        public string BookingMode { get; set; } = "PickleBook"; // PickleBook, ExternalOnly
 
         // "PayAtVenue" or "Online" — determines whether bookers pay online at checkout
         // or pay in person when they arrive. Defaults to PayAtVenue so existing courts

@@ -64,6 +64,7 @@ public async Task<ActionResult> GetCourt(int id)
         court.Amenities,
         court.Rules,
         court.PaymentMethod,
+        court.BookingMode,
         court.AllowOpenPlay,
         court.MonFriOpen,
         court.MonFriClose,
@@ -177,6 +178,7 @@ public async Task<ActionResult> GetCourt(int id)
             }
             var venue = await ResolveVenue(ownerId, court);
             existing.PaymentMethod = court.PaymentMethod;
+            existing.BookingMode = court.BookingMode == "ExternalOnly" ? "ExternalOnly" : "PickleBook";
             existing.AllowOpenPlay = court.AllowOpenPlay;
             existing.VenueId = venue.Id;
             existing.Name = court.Name;
@@ -194,7 +196,7 @@ public async Task<ActionResult> GetCourt(int id)
             existing.SatClose = court.SatClose;
             existing.SunOpen = court.SunOpen;
             existing.SunClose = court.SunClose;
-            existing.ExternalBookingUrl = court.ExternalBookingUrl ?? venue.ExternalBookingUrl;
+            existing.ExternalBookingUrl = NormalizeExternalUrl(court.ExternalBookingUrl ?? venue.ExternalBookingUrl);
             existing.Latitude = venue.Latitude;
             existing.Longitude = venue.Longitude;
 
@@ -209,6 +211,8 @@ public async Task<ActionResult> GetCourt(int id)
         {
             var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             court.CourtOwnerId = ownerId;
+            court.BookingMode = court.BookingMode == "ExternalOnly" ? "ExternalOnly" : "PickleBook";
+            court.ExternalBookingUrl = NormalizeExternalUrl(court.ExternalBookingUrl);
             var venue = await ResolveVenue(ownerId, court);
             court.VenueId = venue.Id;
             court.Address = venue.Address;
@@ -216,7 +220,7 @@ public async Task<ActionResult> GetCourt(int id)
             court.Longitude = venue.Longitude;
             if (string.IsNullOrWhiteSpace(court.Description)) court.Description = venue.Description;
             if (string.IsNullOrWhiteSpace(court.Amenities)) court.Amenities = venue.Amenities;
-            court.ExternalBookingUrl ??= venue.ExternalBookingUrl;
+            court.ExternalBookingUrl ??= NormalizeExternalUrl(venue.ExternalBookingUrl);
 
             _context.Courts.Add(court);
             await _context.SaveChangesAsync();
@@ -405,12 +409,28 @@ public async Task<ActionResult> GetCourt(int id)
                 Longitude = court.Venue?.Longitude ?? court.Longitude,
                 Description = court.Venue?.Description ?? court.Description,
                 Amenities = court.Venue?.Amenities ?? court.Amenities,
-                ExternalBookingUrl = court.Venue?.ExternalBookingUrl ?? court.ExternalBookingUrl
+                ExternalBookingUrl = NormalizeExternalUrl(court.Venue?.ExternalBookingUrl ?? court.ExternalBookingUrl)
             };
 
             _context.Venues.Add(venue);
             await _context.SaveChangesAsync();
             return venue;
+        }
+
+        private static string? NormalizeExternalUrl(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            var trimmed = value.Trim();
+            if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+                !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = $"https://{trimmed}";
+            }
+
+            return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) &&
+                (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                ? trimmed
+                : value.Trim();
         }
 
         private static object ToCourtDto(Court court)
@@ -430,6 +450,7 @@ public async Task<ActionResult> GetCourt(int id)
                 court.Amenities,
                 court.Rules,
                 court.PaymentMethod,
+                court.BookingMode,
                 court.AllowOpenPlay,
                 court.MonFriOpen,
                 court.MonFriClose,

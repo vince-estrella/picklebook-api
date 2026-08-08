@@ -43,6 +43,10 @@ namespace PickleballApi
                 .Property(c => c.AllowOpenPlay)
                 .HasDefaultValue(true);
 
+            modelBuilder.Entity<Court>()
+                .Property(c => c.BookingMode)
+                .HasDefaultValue("PickleBook");
+
             modelBuilder.Entity<Venue>()
                 .HasIndex(v => new { v.CourtOwnerId, v.Name });
 
