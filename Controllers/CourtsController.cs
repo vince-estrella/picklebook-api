@@ -215,6 +215,7 @@ public async Task<ActionResult> GetCourt(int id)
             court.ExternalBookingUrl = NormalizeExternalUrl(court.ExternalBookingUrl);
             var venue = await ResolveVenue(ownerId, court);
             court.VenueId = venue.Id;
+            court.Venue = null;
             court.Address = venue.Address;
             court.Latitude = venue.Latitude;
             court.Longitude = venue.Longitude;
