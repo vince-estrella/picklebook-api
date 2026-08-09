@@ -13,6 +13,14 @@ namespace PickleballApi.Controllers
         public PushKeysDto Keys { get; set; } = new();
     }
 
+    public class PushPreferencesDto
+    {
+        public bool BookingNotifications { get; set; } = true;
+        public bool MessageNotifications { get; set; } = true;
+        public bool OpenPlayNotifications { get; set; } = true;
+        public bool ReminderNotifications { get; set; } = true;
+    }
+
     public class PushKeysDto
     {
         public string P256dh { get; set; } = string.Empty;
@@ -84,6 +92,42 @@ namespace PickleballApi.Controllers
         }
 
         [Authorize(Roles = "Player,CourtOwner")]
+        [HttpGet("preferences")]
+        public async Task<ActionResult> GetPreferences()
+        {
+            var subscriptions = await GetCurrentAccountSubscriptions().ToListAsync();
+            var latest = subscriptions
+                .OrderByDescending(s => s.UpdatedAt)
+                .FirstOrDefault();
+
+            return Ok(new PushPreferencesDto
+            {
+                BookingNotifications = latest?.BookingNotifications ?? true,
+                MessageNotifications = latest?.MessageNotifications ?? true,
+                OpenPlayNotifications = latest?.OpenPlayNotifications ?? true,
+                ReminderNotifications = latest?.ReminderNotifications ?? true
+            });
+        }
+
+        [Authorize(Roles = "Player,CourtOwner")]
+        [HttpPut("preferences")]
+        public async Task<ActionResult> UpdatePreferences(PushPreferencesDto dto)
+        {
+            var subscriptions = await GetCurrentAccountSubscriptions().ToListAsync();
+            foreach (var subscription in subscriptions)
+            {
+                subscription.BookingNotifications = dto.BookingNotifications;
+                subscription.MessageNotifications = dto.MessageNotifications;
+                subscription.OpenPlayNotifications = dto.OpenPlayNotifications;
+                subscription.ReminderNotifications = dto.ReminderNotifications;
+                subscription.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+            return Ok(dto);
+        }
+
+        [Authorize(Roles = "Player,CourtOwner")]
         [HttpDelete("subscriptions")]
         public async Task<ActionResult> DeleteSubscription(PushSubscriptionDto dto)
         {
@@ -122,6 +166,16 @@ namespace PickleballApi.Controllers
             }
 
             return Ok(new { sent = true });
+        }
+
+        private IQueryable<PushSubscription> GetCurrentAccountSubscriptions()
+        {
+            var role = User.FindFirstValue(ClaimTypes.Role) ?? "";
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            return role == "CourtOwner"
+                ? _context.PushSubscriptions.Where(s => s.UserRole == "CourtOwner" && s.CourtOwnerId == userId)
+                : _context.PushSubscriptions.Where(s => s.UserRole == "Player" && s.UserId == userId);
         }
     }
 }

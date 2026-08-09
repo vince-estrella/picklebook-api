@@ -12,6 +12,10 @@ namespace PickleballApi.Models
         public string P256dh { get; set; } = string.Empty;
         public string Auth { get; set; } = string.Empty;
         public string? UserAgent { get; set; }
+        public bool BookingNotifications { get; set; } = true;
+        public bool MessageNotifications { get; set; } = true;
+        public bool OpenPlayNotifications { get; set; } = true;
+        public bool ReminderNotifications { get; set; } = true;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
         public DateTime? LastUsedAt { get; set; }

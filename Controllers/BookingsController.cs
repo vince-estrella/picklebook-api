@@ -592,7 +592,8 @@ namespace PickleballApi.Controllers
                     "New booking request",
                     $"{booking.BookerName} requested {court.Name} on {booking.Date:MMM d}.",
                     "/owner/bookings",
-                    "booking-new"));
+                    "booking-new",
+                    "booking"));
                 return Ok(new { booking = BuildBookingResponse(), checkoutUrl = (string?)null });
             }
 
@@ -605,7 +606,8 @@ namespace PickleballApi.Controllers
                     "New online booking started",
                     $"{booking.BookerName} started checkout for {court.Name}.",
                     "/owner/bookings",
-                    "booking-new"));
+                    "booking-new",
+                    "booking"));
 
                 return Ok(new { booking = BuildBookingResponse(), checkoutUrl });
             }
@@ -721,7 +723,8 @@ namespace PickleballApi.Controllers
                     title,
                     body,
                     "/my-bookings",
-                    $"booking-{status.ToLowerInvariant()}"));
+                    $"booking-{status.ToLowerInvariant()}",
+                    "booking"));
             }
 
             return Ok(new
@@ -733,6 +736,97 @@ namespace PickleballApi.Controllers
                     ? null
                     : new { openPlaySession.RoomCode, openPlaySession.Status }
             });
+        }
+
+        [Authorize(Roles = "Player")]
+        [HttpPatch("{id}/cancel")]
+        public async Task<ActionResult> CancelOwnBooking(int id)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var booking = await _context.Bookings
+                .Include(b => b.Court)
+                .Include(b => b.OpenPlaySession)
+                .FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId);
+
+            if (booking == null) return NotFound();
+            if (booking.Status == "Cancelled") return Ok(new { booking.Id, booking.Status, booking.PaymentStatus });
+            if (booking.Status == "Completed") return BadRequest("Completed bookings cannot be cancelled.");
+
+            var startsAtLocal = booking.Date.Date + booking.StartTime;
+            if (startsAtLocal <= NowInPhilippines())
+            {
+                return BadRequest("Bookings that have already started cannot be cancelled in the app.");
+            }
+
+            booking.Status = "Cancelled";
+            booking.CancelledAt = DateTime.UtcNow;
+
+            var requiresRefund = booking.PaymentMethod == "Online" && booking.PaymentStatus == "Paid";
+            if (requiresRefund)
+            {
+                booking.PaymentStatus = "RefundPending";
+            }
+
+            if (booking.OpenPlaySession != null)
+            {
+                booking.OpenPlaySession.Status = "Cancelled";
+            }
+
+            await _context.SaveChangesAsync();
+
+            if (booking.Court != null)
+            {
+                await _push.SendToOwnerAsync(booking.Court.CourtOwnerId, new PushMessage(
+                    requiresRefund ? "Booking cancelled - refund needed" : "Booking cancelled",
+                    requiresRefund
+                        ? $"{booking.BookerName} cancelled a paid booking for {booking.Court.Name}. Review refund manually."
+                        : $"{booking.BookerName} cancelled a booking for {booking.Court.Name}.",
+                    "/owner/bookings",
+                    "booking-cancelled",
+                    "booking"));
+            }
+
+            return Ok(new
+            {
+                booking.Id,
+                booking.Status,
+                booking.PaymentStatus,
+                requiresRefund
+            });
+        }
+
+        [Authorize(Roles = "CourtOwner")]
+        [HttpPatch("{id}/refund-status")]
+        public async Task<ActionResult> UpdateRefundStatus(int id, [FromBody] string paymentStatus)
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var booking = await _context.Bookings
+                .Include(b => b.Court)
+                .FirstOrDefaultAsync(b => b.Id == id);
+
+            if (booking == null) return NotFound();
+            if (booking.Court?.CourtOwnerId != ownerId) return Forbid();
+
+            var validStatuses = new[] { "RefundPending", "Refunded", "Paid" };
+            if (!validStatuses.Contains(paymentStatus))
+            {
+                return BadRequest("Invalid refund status.");
+            }
+
+            booking.PaymentStatus = paymentStatus;
+            await _context.SaveChangesAsync();
+
+            if (booking.UserId != null && paymentStatus == "Refunded")
+            {
+                await _push.SendToPlayerAsync(booking.UserId.Value, new PushMessage(
+                    "Refund marked complete",
+                    $"{booking.Court?.Name} marked your refund as complete.",
+                    "/my-bookings",
+                    "booking-refunded",
+                    "booking"));
+            }
+
+            return Ok(new { booking.Id, booking.Status, booking.PaymentStatus });
         }
     }
 }

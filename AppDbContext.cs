@@ -76,6 +76,22 @@ namespace PickleballApi
 
             modelBuilder.Entity<PushSubscription>()
                 .HasIndex(s => new { s.UserRole, s.UserId, s.CourtOwnerId });
+
+            modelBuilder.Entity<PushSubscription>()
+                .Property(s => s.BookingNotifications)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<PushSubscription>()
+                .Property(s => s.MessageNotifications)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<PushSubscription>()
+                .Property(s => s.OpenPlayNotifications)
+                .HasDefaultValue(true);
+
+            modelBuilder.Entity<PushSubscription>()
+                .Property(s => s.ReminderNotifications)
+                .HasDefaultValue(true);
         }
     }
 }

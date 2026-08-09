@@ -152,14 +152,16 @@ namespace PickleballApi.Controllers
                     "Booking confirmed",
                     $"{booking.Court.Name} is confirmed. Your payment was received.",
                     "/my-bookings",
-                    "booking-confirmed"));
+                    "booking-confirmed",
+                    "booking"));
             }
 
             await _push.SendToOwnerAsync(booking.Court.CourtOwnerId, new PushMessage(
                 "Booking paid",
                 $"{booking.BookerName}'s payment for {booking.Court.Name} was received.",
                 "/owner/bookings",
-                "booking-paid"));
+                "booking-paid",
+                "booking"));
 
             return Ok();
         }

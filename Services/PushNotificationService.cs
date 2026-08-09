@@ -5,7 +5,7 @@ using WebPush;
 
 namespace PickleballApi.Services
 {
-    public record PushMessage(string Title, string Body, string Url, string Tag = "picklebook");
+    public record PushMessage(string Title, string Body, string Url, string Tag = "picklebook", string Category = "general");
 
     public interface IPushNotificationService
     {
@@ -49,7 +49,9 @@ namespace PickleballApi.Services
 
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var subscriptions = await filter(db.PushSubscriptions).ToListAsync();
+            var subscriptions = (await filter(db.PushSubscriptions).ToListAsync())
+                .Where(subscription => AllowsCategory(subscription, message.Category))
+                .ToList();
             if (subscriptions.Count == 0) return;
 
             var vapidDetails = new VapidDetails(_subject, _publicKey, _privateKey);
@@ -82,6 +84,18 @@ namespace PickleballApi.Services
             }
 
             await db.SaveChangesAsync();
+        }
+
+        private static bool AllowsCategory(Models.PushSubscription subscription, string category)
+        {
+            return category.ToLowerInvariant() switch
+            {
+                "booking" => subscription.BookingNotifications,
+                "message" => subscription.MessageNotifications,
+                "openplay" => subscription.OpenPlayNotifications,
+                "reminder" => subscription.ReminderNotifications,
+                _ => true
+            };
         }
     }
 }

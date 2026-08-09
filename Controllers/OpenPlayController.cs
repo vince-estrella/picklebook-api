@@ -318,7 +318,8 @@ namespace PickleballApi.Controllers
                     "Player joined Open Play",
                     $"{playerName} joined {courtName}.",
                     openPlayUrl,
-                    "openplay-join"));
+                    "openplay-join",
+                    "openplay"));
             }
 
             if (session.HostOwnerId != null)
@@ -327,7 +328,8 @@ namespace PickleballApi.Controllers
                     "Player joined Open Play",
                     $"{playerName} joined {courtName}.",
                     "/owner/open-play",
-                    "openplay-join"));
+                    "openplay-join",
+                    "openplay"));
             }
 
             return Ok(new { message = "Joined open play." });
@@ -371,7 +373,8 @@ namespace PickleballApi.Controllers
                     "Open Play updated",
                     "Your Open Play payment or check-in status was updated.",
                     $"/open-play/{participant.OpenPlaySession.RoomCode}",
-                    "openplay-update"));
+                    "openplay-update",
+                    "openplay"));
             }
 
             return Ok(new { participant.Id, participant.PaymentStatus, participant.CheckInStatus });

@@ -201,7 +201,8 @@ namespace PickleballApi.Controllers
                 "New message",
                 "A player sent you a message on PickleBook.",
                 "/owner/messages",
-                "message-owner"));
+                "message-owner",
+                "message"));
 
             return Ok(ProjectMessage(message));
         }
@@ -252,7 +253,8 @@ namespace PickleballApi.Controllers
                 "New message",
                 "A court owner replied to your message.",
                 "/messages",
-                "message-player"));
+                "message-player",
+                "message"));
 
             return Ok(ProjectMessage(message));
         }
