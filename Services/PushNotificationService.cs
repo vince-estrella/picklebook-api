@@ -24,9 +24,9 @@ namespace PickleballApi.Services
         public PushNotificationService(IServiceScopeFactory scopeFactory)
         {
             _scopeFactory = scopeFactory;
-            _publicKey = Environment.GetEnvironmentVariable("VAPID_PUBLIC_KEY");
-            _privateKey = Environment.GetEnvironmentVariable("VAPID_PRIVATE_KEY");
-            _subject = Environment.GetEnvironmentVariable("VAPID_SUBJECT") ?? "mailto:support@thepicklebook.app";
+            _publicKey = Environment.GetEnvironmentVariable("VAPID_PUBLIC_KEY")?.Trim();
+            _privateKey = Environment.GetEnvironmentVariable("VAPID_PRIVATE_KEY")?.Trim();
+            _subject = Environment.GetEnvironmentVariable("VAPID_SUBJECT")?.Trim() ?? "mailto:support@thepicklebook.app";
         }
 
         public string? PublicKey => string.IsNullOrWhiteSpace(_publicKey) ? null : _publicKey;
