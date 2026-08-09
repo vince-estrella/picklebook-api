@@ -251,7 +251,7 @@ namespace PickleballApi.Controllers
             await _push.SendToPlayerAsync(conversation.PlayerId, new PushMessage(
                 "New message",
                 "A court owner replied to your message.",
-                "/my-bookings",
+                "/messages",
                 "message-player"));
 
             return Ok(ProjectMessage(message));
