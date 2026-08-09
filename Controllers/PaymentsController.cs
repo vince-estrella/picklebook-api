@@ -12,11 +12,13 @@ namespace PickleballApi.Controllers
     {
         private readonly AppDbContext _context;
         private readonly IEmailService _emailService;
+        private readonly IPushNotificationService _push;
 
-        public PaymentsController(AppDbContext context, IEmailService emailService)
+        public PaymentsController(AppDbContext context, IEmailService emailService, IPushNotificationService push)
         {
             _context = context;
             _emailService = emailService;
+            _push = push;
         }
 
         [HttpPost("webhook")]
@@ -143,6 +145,21 @@ namespace PickleballApi.Controllers
             {
                 Console.WriteLine($"Receipt email failed for booking {booking.Id} (invoice {invoiceId}): {ex.Message}");
             }
+
+            if (booking.UserId != null)
+            {
+                await _push.SendToPlayerAsync(booking.UserId.Value, new PushMessage(
+                    "Booking confirmed",
+                    $"{booking.Court.Name} is confirmed. Your payment was received.",
+                    "/my-bookings",
+                    "booking-confirmed"));
+            }
+
+            await _push.SendToOwnerAsync(booking.Court.CourtOwnerId, new PushMessage(
+                "Booking paid",
+                $"{booking.BookerName}'s payment for {booking.Court.Name} was received.",
+                "/owner/bookings",
+                "booking-paid"));
 
             return Ok();
         }

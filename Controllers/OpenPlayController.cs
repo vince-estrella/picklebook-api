@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 using System.Security.Claims;
 
 namespace PickleballApi.Controllers
@@ -11,10 +12,12 @@ namespace PickleballApi.Controllers
     public class OpenPlayController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IPushNotificationService _push;
 
-        public OpenPlayController(AppDbContext context)
+        public OpenPlayController(AppDbContext context, IPushNotificationService push)
         {
             _context = context;
+            _push = push;
         }
 
         [HttpGet("booking/{bookingId}")]
@@ -302,6 +305,29 @@ namespace PickleballApi.Controllers
             });
             await _context.SaveChangesAsync();
 
+            var player = await _context.Users.FindAsync(userId);
+            var playerName = player == null ? "A player" : $"{player.FirstName} {player.LastName}".Trim();
+            var courtName = session.Booking?.Court?.Name ?? "Open Play";
+            var openPlayUrl = $"/open-play/{session.RoomCode}";
+
+            if (session.HostUserId != null && session.HostUserId != userId)
+            {
+                await _push.SendToPlayerAsync(session.HostUserId.Value, new PushMessage(
+                    "Player joined Open Play",
+                    $"{playerName} joined {courtName}.",
+                    openPlayUrl,
+                    "openplay-join"));
+            }
+
+            if (session.HostOwnerId != null)
+            {
+                await _push.SendToOwnerAsync(session.HostOwnerId.Value, new PushMessage(
+                    "Player joined Open Play",
+                    $"{playerName} joined {courtName}.",
+                    "/owner/open-play",
+                    "openplay-join"));
+            }
+
             return Ok(new { message = "Joined open play." });
         }
 
@@ -336,6 +362,16 @@ namespace PickleballApi.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            if (participant.UserId != userId)
+            {
+                await _push.SendToPlayerAsync(participant.UserId, new PushMessage(
+                    "Open Play updated",
+                    "Your Open Play payment or check-in status was updated.",
+                    $"/open-play/{participant.OpenPlaySession.RoomCode}",
+                    "openplay-update"));
+            }
+
             return Ok(new { participant.Id, participant.PaymentStatus, participant.CheckInStatus });
         }
 

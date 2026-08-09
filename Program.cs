@@ -22,7 +22,8 @@ builder.Services.AddCors(options =>
             (origin.StartsWith("https://picklebook-frontend") && origin.EndsWith(".vercel.app"))
         )
         .AllowAnyHeader()
-        .AllowAnyMethod();
+        .AllowAnyMethod()
+        .AllowCredentials();
     });
 });
 builder.Services.AddHttpClient();
@@ -49,6 +50,27 @@ var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER")
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var path = context.HttpContext.Request.Path.Value ?? "";
+                var ownerPath = path.Contains("/owner", StringComparison.OrdinalIgnoreCase)
+                    || path.Contains("/courtowners", StringComparison.OrdinalIgnoreCase);
+
+                var cookieName = ownerPath ? "pb_owner_token" : "pb_player_token";
+                if (context.Request.Cookies.TryGetValue(cookieName, out var cookieToken))
+                {
+                    context.Token = cookieToken;
+                }
+                else if (!ownerPath && context.Request.Cookies.TryGetValue("pb_owner_token", out var ownerToken))
+                {
+                    context.Token = ownerToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -63,6 +85,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<IEmailService, EmailService>();
+builder.Services.AddSingleton<IPushNotificationService, PushNotificationService>();
 
 // Rate limiting is per client IP (see GetClientIp below and the
 // ForwardedHeaders setup right after app.Build() — without that, every

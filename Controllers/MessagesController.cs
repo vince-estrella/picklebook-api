@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 using System.Security.Claims;
 
 namespace PickleballApi.Controllers
@@ -21,10 +22,12 @@ namespace PickleballApi.Controllers
     public class MessagesController : ControllerBase
     {
         private readonly AppDbContext _context;
+        private readonly IPushNotificationService _push;
 
-        public MessagesController(AppDbContext context)
+        public MessagesController(AppDbContext context, IPushNotificationService push)
         {
             _context = context;
+            _push = push;
         }
 
         // POST: api/messages/start
@@ -194,6 +197,11 @@ namespace PickleballApi.Controllers
             };
             _context.Messages.Add(message);
             await _context.SaveChangesAsync();
+            await _push.SendToOwnerAsync(conversation.CourtOwnerId, new PushMessage(
+                "New message",
+                "A player sent you a message on PickleBook.",
+                "/owner/messages",
+                "message-owner"));
 
             return Ok(ProjectMessage(message));
         }
@@ -240,6 +248,11 @@ namespace PickleballApi.Controllers
             };
             _context.Messages.Add(message);
             await _context.SaveChangesAsync();
+            await _push.SendToPlayerAsync(conversation.PlayerId, new PushMessage(
+                "New message",
+                "A court owner replied to your message.",
+                "/my-bookings",
+                "message-player"));
 
             return Ok(ProjectMessage(message));
         }

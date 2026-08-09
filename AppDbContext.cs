@@ -19,6 +19,7 @@ namespace PickleballApi
         public DbSet<OpenPlayParticipant> OpenPlayParticipants { get; set; }
         public DbSet<User> Users { get; set; }
         public DbSet<Report> Reports { get; set; }
+        public DbSet<PushSubscription> PushSubscriptions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -68,6 +69,13 @@ namespace PickleballApi
             modelBuilder.Entity<OpenPlayParticipant>()
                 .HasIndex(p => new { p.OpenPlaySessionId, p.UserId })
                 .IsUnique();
+
+            modelBuilder.Entity<PushSubscription>()
+                .HasIndex(s => s.Endpoint)
+                .IsUnique();
+
+            modelBuilder.Entity<PushSubscription>()
+                .HasIndex(s => new { s.UserRole, s.UserId, s.CourtOwnerId });
         }
     }
 }

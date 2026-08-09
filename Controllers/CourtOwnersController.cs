@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 
 namespace PickleballApi.Controllers
 {
@@ -75,15 +76,24 @@ var token = new JwtSecurityToken(
                 expires: DateTime.UtcNow.AddDays(7),
                 signingCredentials: creds
             );
+            var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+            AuthCookieHelper.SetAuthCookie(Response, "pb_owner_token", tokenString);
 
             return Ok(new
             {
-                token = new JwtSecurityTokenHandler().WriteToken(token),
+                token = tokenString,
                 owner.Id,
                 owner.FirstName,
                 owner.LastName,
                 owner.Email
             });
+        }
+
+        [HttpPost("logout")]
+        public ActionResult Logout()
+        {
+            AuthCookieHelper.ClearAuthCookie(Response, "pb_owner_token");
+            return NoContent();
         }
     }
 }

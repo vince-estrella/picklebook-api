@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PickleballApi.Models;
+using PickleballApi.Services;
 using CloudinaryDotNet;
 using CloudinaryDotNet.Actions;
 namespace PickleballApi.Controllers
@@ -78,16 +79,25 @@ namespace PickleballApi.Controllers
                 expires: DateTime.UtcNow.AddDays(7),
                 signingCredentials: creds
             );
+            var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+            AuthCookieHelper.SetAuthCookie(Response, "pb_player_token", tokenString);
 
             return Ok(new
             {
-                token = new JwtSecurityTokenHandler().WriteToken(token),
+                token = tokenString,
                 user.Id,
                 user.FirstName,
                 user.LastName,
                 user.Email,
                 user.Phone
             });
+        }
+
+        [HttpPost("logout")]
+        public ActionResult Logout()
+        {
+            AuthCookieHelper.ClearAuthCookie(Response, "pb_player_token");
+            return NoContent();
         }
 
         // GET: api/users/bookings — the logged-in player's own booking history

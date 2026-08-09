@@ -15,15 +15,17 @@ namespace PickleballApi.Controllers
         private readonly AppDbContext _context;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IEmailService _emailService;
+        private readonly IPushNotificationService _push;
 
         private static readonly TimeZoneInfo PhilippineTimeZone =
             TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
 
-        public BookingsController(AppDbContext context, IHttpClientFactory httpClientFactory, IEmailService emailService)
+        public BookingsController(AppDbContext context, IHttpClientFactory httpClientFactory, IEmailService emailService, IPushNotificationService push)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
             _emailService = emailService;
+            _push = push;
         }
 
         private static DateTime NowInPhilippines()
@@ -586,6 +588,11 @@ namespace PickleballApi.Controllers
                 // receipt goes out right away. Online bookings get theirs once
                 // the Xendit webhook confirms the payment actually went through.
                 await _emailService.SendBookingReceiptAsync(booking, court);
+                await _push.SendToOwnerAsync(court.CourtOwnerId, new PushMessage(
+                    "New booking request",
+                    $"{booking.BookerName} requested {court.Name} on {booking.Date:MMM d}.",
+                    "/owner/bookings",
+                    "booking-new"));
                 return Ok(new { booking = BuildBookingResponse(), checkoutUrl = (string?)null });
             }
 
@@ -594,6 +601,11 @@ namespace PickleballApi.Controllers
                 var (invoiceId, checkoutUrl) = await CreateXenditInvoice(booking.Id, booking.PublicToken!, amount, $"{court.Name} — {dto.Date:yyyy-MM-dd} {dto.StartTime}");
                 booking.XenditInvoiceId = invoiceId;
                 await _context.SaveChangesAsync();
+                await _push.SendToOwnerAsync(court.CourtOwnerId, new PushMessage(
+                    "New online booking started",
+                    $"{booking.BookerName} started checkout for {court.Name}.",
+                    "/owner/bookings",
+                    "booking-new"));
 
                 return Ok(new { booking = BuildBookingResponse(), checkoutUrl });
             }
@@ -698,6 +710,19 @@ namespace PickleballApi.Controllers
             }
 
             await _context.SaveChangesAsync();
+
+            if (booking.UserId != null && (status == "Confirmed" || status == "Cancelled"))
+            {
+                var title = status == "Confirmed" ? "Booking confirmed" : "Booking cancelled";
+                var body = status == "Confirmed"
+                    ? $"{booking.Court?.Name} confirmed your booking."
+                    : $"{booking.Court?.Name} cancelled or rejected your booking.";
+                await _push.SendToPlayerAsync(booking.UserId.Value, new PushMessage(
+                    title,
+                    body,
+                    "/my-bookings",
+                    $"booking-{status.ToLowerInvariant()}"));
+            }
 
             return Ok(new
             {
