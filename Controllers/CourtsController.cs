@@ -177,6 +177,7 @@ public async Task<ActionResult> GetCourt(int id)
                 return Forbid();
             }
             var venue = await ResolveVenue(ownerId, court);
+            court.Venue = null;
             existing.PaymentMethod = court.PaymentMethod;
             existing.BookingMode = court.BookingMode == "ExternalOnly" ? "ExternalOnly" : "PickleBook";
             existing.AllowOpenPlay = court.AllowOpenPlay;
@@ -201,7 +202,7 @@ public async Task<ActionResult> GetCourt(int id)
             existing.Longitude = venue.Longitude;
 
             await _context.SaveChangesAsync();
-            return Ok(existing);
+            return Ok(ToCourtDto(existing));
         }
 
         // POST: api/courts
