@@ -751,6 +751,8 @@ namespace PickleballApi.Controllers
             if (booking == null) return NotFound();
             if (booking.Status == "Cancelled") return Ok(new { booking.Id, booking.Status, booking.PaymentStatus });
             if (booking.Status == "Completed") return BadRequest("Completed bookings cannot be cancelled.");
+            if (booking.Status == "Confirmed") return BadRequest("Confirmed bookings cannot be cancelled in the app. Please contact the court owner.");
+            if (booking.Status != "Pending") return BadRequest("Only pending bookings can be cancelled in the app.");
 
             var startsAtLocal = booking.Date.Date + booking.StartTime;
             if (startsAtLocal <= NowInPhilippines())
