@@ -108,19 +108,6 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         }));
 
-    // Screenshot name extraction: each call costs real money (Anthropic
-    // vision API), and — since it has no auth requirement, Queue Manager
-    // itself is a public page — this is the main thing standing between an
-    // open endpoint and an open wallet.
-    options.AddPolicy("extract-names", httpContext => RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: GetClientIp(httpContext),
-        factory: _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 20,
-            Window = TimeSpan.FromHours(1),
-            QueueLimit = 0
-        }));
-
     // Booking creation: coarse abuse protection, separate from the
     // court+date named-lock (which prevents double-booking, not spam).
     options.AddPolicy("booking", httpContext => RateLimitPartition.GetFixedWindowLimiter(
