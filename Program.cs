@@ -55,8 +55,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             OnMessageReceived = context =>
             {
                 var path = context.HttpContext.Request.Path.Value ?? "";
+                var method = context.HttpContext.Request.Method;
                 var ownerPath = path.Contains("/owner", StringComparison.OrdinalIgnoreCase)
-                    || path.Contains("/courtowners", StringComparison.OrdinalIgnoreCase);
+                    || path.Contains("/courtowners", StringComparison.OrdinalIgnoreCase)
+                    || path.Equals("/api/bookings/stats", StringComparison.OrdinalIgnoreCase)
+                    || (path.StartsWith("/api/bookings/", StringComparison.OrdinalIgnoreCase)
+                        && (path.EndsWith("/status", StringComparison.OrdinalIgnoreCase)
+                            || path.EndsWith("/refund-status", StringComparison.OrdinalIgnoreCase)))
+                    || (path.Equals("/api/courts", StringComparison.OrdinalIgnoreCase)
+                        && HttpMethods.IsPost(method))
+                    || (path.StartsWith("/api/courts/", StringComparison.OrdinalIgnoreCase)
+                        && (HttpMethods.IsPost(method)
+                            || HttpMethods.IsPut(method)
+                            || HttpMethods.IsDelete(method)))
+                    || (path.StartsWith("/api/venues/", StringComparison.OrdinalIgnoreCase)
+                        && HttpMethods.IsDelete(method));
 
                 var cookieName = ownerPath ? "pb_owner_token" : "pb_player_token";
                 if (context.Request.Cookies.TryGetValue(cookieName, out var cookieToken))
