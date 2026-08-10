@@ -42,5 +42,26 @@ namespace PickleballApi.Controllers
 
             return Ok(venues);
         }
+
+        [Authorize(Roles = "CourtOwner")]
+        [HttpDelete("{id}")]
+        public async Task<ActionResult> DeleteVenue(int id)
+        {
+            var ownerId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var venue = await _context.Venues
+                .Include(v => v.Courts)
+                .FirstOrDefaultAsync(v => v.Id == id && v.CourtOwnerId == ownerId);
+
+            if (venue == null) return NotFound();
+
+            if (venue.Courts.Count > 0)
+            {
+                return BadRequest("This venue still has courts. Move or delete those courts before deleting the venue.");
+            }
+
+            _context.Venues.Remove(venue);
+            await _context.SaveChangesAsync();
+            return NoContent();
+        }
     }
 }
